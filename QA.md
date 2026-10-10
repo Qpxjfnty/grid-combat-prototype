@@ -1,0 +1,19 @@
+# Verification
+
+Verified on 10 October 2026.
+
+- 44 deterministic combat/geometry tests pass. Coverage includes continuous pulse shadows and partial exposure, chained breaches, all interruption boundaries, Heavy versus normal counters, core removal/return, frozen time, invalid commands, and blocked gap closers.
+- Arena generation checks cover 48 seeds across all five arenas (240 layouts), with connected floors and no overlapping occupants.
+- A separate randomized simulation exercised 100 seeds and 10,435 legal commands, including 347 frozen-phase commands. No overlapping occupants, invalid resource values, mutation of input snapshots, or unintended enemy time advances were found.
+- A tactical simulation cleared all five arenas on seed 731 using 327 legal commands, finishing with 8/12 HP. This verifies a legal complete run; it is not a claim that balance is final.
+- Production typecheck and static build pass.
+- WebKit with iPad Pro 11 touch emulation: Quickstep, Dash, Deflect, Focus, targeting without time passing, explicit enemy resolution, attack turn, exact save/reload during frozen time, and phase resume pass.
+- Touch-driven combo fixture: pulse breach, Core ×2, Shift onto a removed enemy's tile, Break, Core, charge accounting, phase end, and safe enemy return all pass.
+- Rotation between 768 × 1024, 834 × 1194, and 1194 × 834 keeps the board square, correctly maps touch targets, and produces no horizontal overflow. Grid cells remain at least 44 CSS pixels at these sizes. A canvas-height issue found during rotation was corrected and retested.
+- WebKit reported no browser console errors during these checks.
+
+The balance values in DESIGN.md are prototype assumptions. Physical iPad Safari testing has not been performed. Browser emulation does not establish device-specific performance or touchscreen ergonomics.
+
+## Implementation references
+
+The Phaser board uses [Scale Manager FIT](https://docs.phaser.io/api-documentation/3.90.0/class/scale-scalemanager). Deployment follows [GitHub Pages publishing-source guidance](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site).
