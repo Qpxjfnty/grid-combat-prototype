@@ -11,6 +11,7 @@ Verified on 10 October 2026.
 - Touch-driven combo fixture: pulse breach, Core ×2, Shift onto a removed enemy's tile, Break, Core, charge accounting, phase end, and safe enemy return all pass.
 - Rotation between 768 × 1024, 834 × 1194, and 1194 × 834 keeps the board square, correctly maps touch targets, and produces no horizontal overflow. Grid cells remain at least 44 CSS pixels at these sizes. A canvas-height issue found during rotation was corrected and retested.
 - WebKit reported no browser console errors during these checks.
+- Desktop Chromium at 1280 × 800: keyboard Quickstep and Strike targeting/confirmation, retained counter direction, enemy inspection and movement preview, Focus, and explicit resolution pass. The board remains square, there is no horizontal overflow, and the final browser session reports zero errors and warnings.
 
 The balance values in DESIGN.md are prototype assumptions. Physical iPad Safari testing has not been performed. Browser emulation does not establish device-specific performance or touchscreen ergonomics.
 
