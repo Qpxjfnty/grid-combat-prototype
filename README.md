@@ -6,7 +6,7 @@ A small, touch-friendly roguelike combat prototype. Fresh TypeScript simulation,
 
 [Open the game](https://qpxjfnty.github.io/grid-combat-prototype/). On iPad, open the link in Safari. Nothing to install. The current run saves automatically in this browser, including mid-combo. Browser storage may be unavailable in private sessions.
 
-Select an action, tap a highlighted tile, then confirm. Focus takes effect immediately. Tap an enemy to inspect its Guard, life, opening, and next attack. Marked attack tiles show where the enemies will hit after the three action slots; movement destinations show their gap closers.
+Select an action, tap a highlighted tile, then confirm. Focus takes effect immediately. Hover any tile to inspect its contents, planned attacks, and arrivals. Hover an enemy to inspect its Guard, life, opening, and next attack; tap or click to keep the inspection when the pointer leaves. Hover never changes your action target or advances time. Marked attack tiles show where the enemies will hit after the three action slots; movement destinations show their gap closers.
 
 1. Quickstep.
 2. Dash, Strike, or Focus.

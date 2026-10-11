@@ -10,6 +10,7 @@ export interface BoardFrame {
   valid: Point[];
   preview: Point[];
   inspectId: number | null;
+  inspectTile: Point | null;
   showThreats: boolean;
   pulsePreview: PulseResult | null;
 }
@@ -20,7 +21,7 @@ const C = { bg: 0x101419, tile: 0x1d232a, grid: 0x343c47, text: '#f2f5f7', muted
 const eq = (a: Point, b: Point) => a.x === b.x && a.y === b.y;
 const coord = (p: Point) => ({ x: PAD + p.x * CELL + CELL / 2, y: PAD + p.y * CELL + CELL / 2 });
 
-export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTile: (p: Point) => void) {
+export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTile: (p: Point) => void, onHover: (p: Point | null) => void) {
   let scene: CombatBoard | undefined;
   let ready = false;
   let pendingPulse: Point | null = null;
@@ -132,6 +133,7 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
         const e = s.enemies.find(e => e.id === f.inspectId && e.hp > 0);
         if (e) this.outline(e, 0xffffff, 1.5, 2);
       }
+      if (f.inspectTile) this.outline(f.inspectTile, 0xffffff, 1, 6);
       if (f.cursor && !f.target) this.outline(f.cursor, 0xdce3eb, 1, 3);
       if (f.target) {
         this.outline(f.target, C.valid, 3, 3);
@@ -179,9 +181,26 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
   // Keep input coordinates in sync; the canvas never determines its parent's height.
   const resizeObserver = new ResizeObserver(() => game.scale.refresh());
   resizeObserver.observe(host);
+  const hover = (event: PointerEvent) => {
+    if (event.pointerType === 'touch') return;
+    const bounds = game.canvas.getBoundingClientRect();
+    const x = Math.floor(((event.clientX - bounds.left) * EDGE / bounds.width - PAD) / CELL);
+    const y = Math.floor(((event.clientY - bounds.top) * EDGE / bounds.height - PAD) / CELL);
+    onHover(x >= 0 && y >= 0 && x < SIZE && y < SIZE ? { x, y } : null);
+  };
+  const leave = () => onHover(null);
+  game.canvas.addEventListener('pointermove', hover);
+  game.canvas.addEventListener('pointerleave', leave);
+  window.addEventListener('blur', leave);
   return {
     redraw: () => { if (ready) scene?.redraw(); },
     animatePulse: (p: Point) => { if (ready) scene?.animatePulse(p); else pendingPulse = p; },
-    destroy: () => { resizeObserver.disconnect(); game.destroy(true); },
+    destroy: () => {
+      resizeObserver.disconnect();
+      game.canvas.removeEventListener('pointermove', hover);
+      game.canvas.removeEventListener('pointerleave', leave);
+      window.removeEventListener('blur', leave);
+      game.destroy(true);
+    },
   };
 }

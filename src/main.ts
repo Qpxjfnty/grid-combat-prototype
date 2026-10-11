@@ -42,7 +42,7 @@ root.innerHTML = `
         <div id="target-controls" class="target-controls"><button id="confirm" class="primary" disabled>Confirm</button><button id="cancel" class="quiet">Cancel</button></div>
         <div id="phase-controls" class="phase-controls"></div>
         <div id="attack-controls" class="attack-controls"></div>
-        <section class="inspection" aria-label="Selected enemy"><div class="inspect-heading"><h3 id="inspect-title">Inspect</h3><button id="clear-inspect" class="text-button" hidden>Clear</button></div><div id="inspect-vitals"></div><p id="inspect-info">Tap an enemy to see its movement and attack.</p></section>
+        <section class="inspection" aria-label="Tile inspection"><div class="inspect-heading"><h3 id="inspect-title">Inspect</h3><button id="clear-inspect" class="text-button" hidden>Clear</button></div><div id="inspect-vitals"></div><p id="inspect-info">Hover a tile to inspect it. Tap or click to keep its details.</p></section>
         <div class="log" aria-live="polite" aria-label="Recent events"><p id="log1"></p><p id="log2"></p></div>
       </section>
     </div>
@@ -56,7 +56,8 @@ root.innerHTML = `
         <p><strong>Pulse:</strong> radial line of sight, ${GUARD.pulse} Guard damage. Pink openings breach instantly. Walls and enemies whose Guard survives cast shadows; breached enemies let the pulse pass through. The reach preview shows the exact resulting visibility, including enemies the pulse will breach.</p>
         <p><strong>Combo:</strong> Shift costs 1 for a queen move; Break costs 2 for ${GUARD.break} Guard damage in an arc; Core costs 1 for 1 HP; Core ×2 costs 3 for 2 HP. Core requires an adjacent breached enemy. A core hit restores armor and removes that enemy until this attack turn ends.</p>
         <p><strong>Armor:</strong> Guard protects all HP. The bar shows remaining integer Guard. Red dots beneath its right end show HP; empty dots are lost HP. A breach interrupts and stuns through the next enemy resolution. Unbreached Guard regenerates by ${GUARD.regen} per resolution. Breached Guard restores after the stun. No regeneration or enemy movement occurs during an attack turn.</p>
-        <p><strong>Enemy types:</strong> L = Lunge, S = Sweep, H = Heavy. Tap a unit to inspect its exact planned destination and attack tiles. Pink means an opening. Yellow means breached. An outline marked “return” shows an enemy removed until the attack turn ends.</p>
+        <p><strong>Inspection:</strong> hover any tile to see its contents, incoming attacks, and planned arrivals. Hover an enemy to see its Guard, HP, planned destination, and attack tiles. Tap or click to keep the inspection after the pointer leaves. Hovering never changes an action target or advances time.</p>
+        <p><strong>Enemy types:</strong> L = Lunge, S = Sweep, H = Heavy. Pink means an opening. Yellow means breached. An outline marked “return” shows an enemy removed until the attack turn ends.</p>
         <p><strong>Run:</strong> clear ${TOTAL_ROOMS} small seeded arenas. Recover 3 HP between arenas. Zero HP ends the run. Your current run saves automatically in this browser.</p>
         <p><strong>Touch:</strong> choose an action, tap a highlighted tile, then confirm. Focus is immediate. <strong>Keyboard:</strong> 1–4 select an ability; arrows or numpad move the target cursor; Enter confirms; F focuses; A starts an attack turn; Escape cancels. Enemy inspection is also available below.</p>
         <details><summary>Enemy list</summary><div id="enemy-list" class="enemy-list"></div></details>
@@ -81,6 +82,8 @@ let selectedAbility: Ability | null = null;
 let target: Point | null = null;
 let cursor: Point | null = null;
 let inspectId: number | null = null;
+let inspectTile: Point | null = null;
+let hoveredTile: Point | null = null;
 let feedback = '';
 let showThreats = true;
 let showPulsePreview = false;
@@ -109,17 +112,24 @@ function syncBeforeAction() {
 }
 function frame(): BoardFrame {
   if (showPulsePreview && canBeginAttack(state) && pulseCache?.state !== state) pulseCache = { state, value: pulse(state, false) };
-  return { state, ability: selectedAbility, target, cursor, valid: selectedAbility ? validTargets(state, selectedAbility) : [], preview: selectedAbility && target ? previewAction(state, selectedAbility, target) : [], inspectId, showThreats, pulsePreview: showPulsePreview && canBeginAttack(state) ? pulseCache?.value ?? null : null };
+  return { state, ability: selectedAbility, target, cursor, valid: selectedAbility ? validTargets(state, selectedAbility) : [], preview: selectedAbility && target ? previewAction(state, selectedAbility, target) : [], inspectId: inspectedEnemy()?.id ?? null, inspectTile: inspectedTile(), showThreats, pulsePreview: showPulsePreview && canBeginAttack(state) ? pulseCache?.value ?? null : null };
 }
 const board = createBoard($('board'), frame, p => {
   const enemy = state.enemies.find(e => eq(e, p) && e.hp > 0);
-  if (enemy) inspectId = enemy.id;
+  inspectId = enemy?.id ?? null;
+  inspectTile = p;
+  hoveredTile = null;
   if (selectedAbility) {
     cursor = p;
     if (validTargets(state, selectedAbility).some(v => eq(v, p))) { target = p; feedback = ''; }
     else { target = null; feedback = 'Choose a highlighted tile.'; }
-  } else if (!enemy) inspectId = null;
+  }
   render();
+}, p => {
+  if (p && hoveredTile ? eq(p, hoveredTile) : p === hoveredTile) return;
+  hoveredTile = p;
+  renderInspection();
+  board.redraw();
 });
 function dispatch(command: Command) {
   if (!syncBeforeAction()) return;
@@ -161,6 +171,34 @@ function inspection(e: Enemy) {
     else text += 'No attack planned. Intention interrupted.';
   }
   return text;
+}
+function inspectedTile(): Point | null {
+  return hoveredTile ?? state.enemies.find(e => e.id === inspectId && e.hp > 0) ?? inspectTile;
+}
+function inspectedEnemy(): Enemy | undefined {
+  const p = inspectedTile();
+  return p ? state.enemies.find(e => eq(e, p) && e.hp > 0) : undefined;
+}
+function renderInspection() {
+  const p = inspectedTile();
+  const enemy = inspectedEnemy();
+  const player = p && eq(p, state.player);
+  const wall = p && state.walls.some(w => eq(w, p));
+  const label = enemy ? `${enemy.kind[0].toUpperCase()}${enemy.id} · ${enemy.kind[0].toUpperCase()}${enemy.kind.slice(1)}` : player ? 'Player' : wall ? 'Wall' : 'Empty';
+  $('inspect-title').textContent = p ? `${coordinate(p)} · ${label}` : 'Inspect';
+  $('inspect-vitals').innerHTML = enemy ? unitVitals(enemy) : player ? hpDots(state.player.hp, state.player.maxHp) : '';
+  const details: string[] = [];
+  if (p) {
+    details.push(enemy ? inspection(enemy) : player ? 'Your position.' : wall ? 'Blocks movement and pulse line of sight.' : 'Open tile.');
+    const active = state.enemies.filter(e => e.hp > 0 && !e.removed && !e.breached && e.intent);
+    const threats = active.filter(e => e.intent!.tiles.some(t => eq(t, p)));
+    details.push(threats.length ? `Planned attacks here: ${threats.map(e => `${e.kind[0].toUpperCase()}${e.id} (${e.intent!.label})`).join('; ')}.` : 'No attacks planned here.');
+    const arrivals = active.filter(e => !eq(e, p) && eq(e.intent!.destination, p));
+    if (arrivals.length) details.push(`Planned arrivals: ${arrivals.map(e => `${e.kind[0].toUpperCase()}${e.id}`).join(', ')}.`);
+  }
+  $('inspect-info').textContent = p ? details.join(' ') : 'Hover a tile to inspect it. Tap or click to keep its details.';
+  $('clear-inspect').hidden = !p;
+  $('board-note').textContent = state.phase === 'attack' && state.pulse ? `Pulse: ${state.pulse.hitIds.length} hit · ${state.pulse.breachedIds.length} breached. Shading shows its original shadow.` : showPulsePreview && canBeginAttack(state) ? 'Pulse preview: dark tiles are occluded. Small blue dots mark enemies it will hit.' : enemy?.intent ? 'White line: inspected enemy’s planned move. Crosses: its attack tiles.' : 'Crosses mark enemy attack tiles. Hover or tap a tile to inspect.';
 }
 function render() {
   const attack = state.phase === 'attack';
@@ -204,31 +242,26 @@ function render() {
   $('attack-controls').replaceChildren();
   if (attack) $('attack-controls').append(button(`End attack${state.charge ? ` · lose ${state.charge} charge` : ''}`, () => dispatch({ type: 'endAttack' }), 'wide'));
   else if (state.phase === 'normal' || state.phase === 'resolve') $('attack-controls').append(button(canBeginAttack(state) ? `Attack turn · use ${state.player.attunement}` : `Attack turn · needs ${THRESHOLD} attunement`, () => dispatch({ type: 'beginAttack' }), 'attack-button wide', !canBeginAttack(state)));
-  const enemy = state.enemies.find(e => e.id === inspectId && e.hp > 0);
-  $('inspect-title').textContent = enemy ? `${enemy.kind[0].toUpperCase()}${enemy.id} · ${enemy.kind[0].toUpperCase()}${enemy.kind.slice(1)}` : 'Inspect';
-  $('inspect-vitals').innerHTML = enemy ? unitVitals(enemy) : '';
-  $('inspect-info').textContent = enemy ? inspection(enemy) : 'Tap an enemy to see its movement and attack.';
-  $('clear-inspect').hidden = !enemy;
+  renderInspection();
   const recent = state.log.slice(0, 2);
   $('log1').textContent = recent[0] ?? '';
   $('log2').textContent = recent[1] ?? '';
   $('save-note').textContent = savedMessage;
   $('pulse-option').hidden = !canBeginAttack(state);
-  $('board-note').textContent = attack && state.pulse ? `Pulse: ${state.pulse.hitIds.length} hit · ${state.pulse.breachedIds.length} breached. Shading shows its original shadow.` : showPulsePreview && canBeginAttack(state) ? 'Pulse preview: dark tiles are occluded. Small blue dots mark enemies it will hit.' : enemy?.intent ? 'White line: selected enemy’s planned move. Crosses: its attack tiles.' : 'Crosses mark enemy attack tiles. Tap an enemy for its planned move.';
   $('enemy-list').replaceChildren(...state.enemies.filter(e => e.hp > 0).map(e => {
-    const b = button(`${e.kind[0].toUpperCase()}${e.id}`, () => { inspectId = e.id; render(); });
+    const b = button(`${e.kind[0].toUpperCase()}${e.id}`, () => { inspectId = e.id; inspectTile = { x: e.x, y: e.y }; hoveredTile = null; render(); });
     b.insertAdjacentHTML('beforeend', unitVitals(e));
     return b;
   }));
   board.redraw();
 }
 function newRun(seed?: number) {
-  state = createGame(seed); inspectId = null; clearSelection(); showPulsePreview = false; ($('pulse-preview') as HTMLInputElement).checked = false;
+  state = createGame(seed); inspectId = null; inspectTile = null; hoveredTile = null; clearSelection(); showPulsePreview = false; ($('pulse-preview') as HTMLInputElement).checked = false;
   save(); ($('seed') as HTMLInputElement).value = String(state.seed); render();
 }
 $('confirm').addEventListener('click', () => { if (selectedAbility && target) dispatch({ type: 'act', ability: selectedAbility, target }); });
 $('cancel').addEventListener('click', () => { clearSelection(); render(); });
-$('clear-inspect').addEventListener('click', () => { inspectId = null; render(); });
+$('clear-inspect').addEventListener('click', () => { inspectId = null; inspectTile = null; hoveredTile = null; render(); });
 $('threats').addEventListener('change', e => { showThreats = (e.target as HTMLInputElement).checked; render(); });
 $('pulse-preview').addEventListener('change', e => { showPulsePreview = (e.target as HTMLInputElement).checked; render(); });
 $('retry').addEventListener('click', () => newRun(state.seed));

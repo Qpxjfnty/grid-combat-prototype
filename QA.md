@@ -2,6 +2,8 @@
 
 Version 0.2 verified on 11 October 2026.
 
+- Hover update: desktop Chrome checks cover enemies, player, walls, empty tiles, planned attacks, pin restoration on board exit/padding, and target confirmation after hover. Hover leaves combat state and saved state unchanged and does not rebuild action buttons. Screenshots were visually reviewed.
+- WebKit iPad emulation verifies tap inspection, pointer hover, ignored touch-generated hover, pin restoration, and normal Quickstep target/confirmation. No horizontal overflow or page errors were observed.
 - 54 combat and save tests pass, including threshold 3, cap 10, removal of Focus from Quickstep, larger integer Guard pools and proportional damage, saved-run migration, and a legally reached corner trap with the conditional blocked-step skip.
 - WebKit iPad touch checks verify Quickstep-only slot 1 (including rejection of the F shortcut), two Focus actions banking 2, attack activation at 3, Focus clamping at 10, and no-reward skip when Quickstep is blocked.
 - Existing saves retain run progress, migrate Guard exactly once, and clamp excess banked attunement/charge to 10. A browser reload confirms migration. Migrated runs use separate version-2 storage so an older open game tab cannot overwrite them.
