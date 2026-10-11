@@ -2,15 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { arc, clearPath, directionTo, distance, inside, pulse, same } from '../src/geometry';
 import { availableAbilities, canBeginAttack, createGame, execute, planEnemies, previewAction, validTargets } from '../src/engine';
-import { DIRS, SIZE, THRESHOLD, TOTAL_ROOMS, type Ability, type Command, type Direction, type Enemy, type GameState, type Point } from '../src/model';
+import { DIRS, GUARD, MAX_ATTUNEMENT, SIZE, STATE_VERSION, THRESHOLD, TOTAL_ROOMS, type Ability, type Command, type Direction, type Enemy, type GameState, type Point } from '../src/model';
 
 const p = (x: number, y: number): Point => ({ x, y });
 const enemy = (id: number, x: number, y: number, fields: Partial<Enemy> = {}): Enemy => ({
-  id, x, y, kind: 'lunge', hp: 3, maxHp: 3, guard: 4, maxGuard: 4,
+  id, x, y, kind: 'lunge', hp: 3, maxHp: 3, guard: 20, maxGuard: 20,
   breached: false, stun: 0, removed: false, opening: false, cycle: 0, intent: null, ...fields,
 });
 const fixture = (fields: Partial<GameState> = {}): GameState => ({
-  version: 1, seed: 123, rng: 123, room: 1, round: 1, slot: 0,
+  version: STATE_VERSION, seed: 123, rng: 123, room: 1, round: 1, slot: 0,
   phase: 'normal', resumePhase: 'normal', player: { x: 4, y: 4, hp: 12, maxHp: 12, attunement: 0 },
   charge: 0, walls: [], enemies: [enemy(99, 0, 0)], defenses: [], log: [], pulse: null, ...fields,
 });
@@ -18,7 +18,7 @@ const act = (s: GameState, ability: Ability, target?: Point) => execute(s, { typ
 const ids = (values: number[]) => [...values].sort((a, b) => a - b);
 const points = (values: Point[]) => values.map(({ x, y }) => `${x},${y}`).sort();
 const get = (s: GameState, id: number) => s.enemies.find(e => e.id === id)!;
-const incoming = (id: number, origin: Point, heavy = false, guard = 2): Enemy => enemy(id, origin.x, origin.y, {
+const incoming = (id: number, origin: Point, heavy = false, guard: number = GUARD.counter): Enemy => enemy(id, origin.x, origin.y, {
   kind: heavy ? 'heavy' : 'lunge', guard, maxGuard: guard,
   intent: { destination: origin, tiles: [p(4, 4)], heavy, label: 'test' },
 });
@@ -70,12 +70,67 @@ test('Quickstep can enter every open adjacent square even beside blocked diagona
   assert.equal(act(occupied, 'quickstep', p(5, 5)), occupied);
 });
 
+test('a legal corner trap can forfeit blocked Quickstep without gaining anything or advancing enemy time', () => {
+  let s = createGame(1);
+  const rounds: [Point, Point, Point][] = [
+    [p(3, 6), p(6, 3), p(6, 2)],
+    [p(6, 2), p(8, 0), p(8, 1)],
+    [p(7, 0), p(8, 0), p(8, 1)],
+    [p(7, 0), p(8, 0), p(7, 1)],
+  ];
+  for (const [quickstep, dash, deflect] of rounds) {
+    const commands: Command[] = [
+      { type: 'act', ability: 'quickstep', target: quickstep },
+      { type: 'act', ability: 'dash', target: dash },
+      { type: 'act', ability: 'deflect', target: deflect },
+      { type: 'resolve' },
+    ];
+    for (const command of commands) {
+      const next = execute(s, command);
+      assert.notEqual(next, s, `reproduction command must be legal: ${JSON.stringify(command)}`);
+      s = next;
+    }
+  }
+  assert.equal(s.round, 5);
+  assert.equal(s.slot, 0);
+  assert.equal(s.player.hp, 12);
+  assert.equal(s.player.attunement, 0);
+  assert(same(s.player, p(8, 0)));
+  assert.deepEqual(validTargets(s, 'quickstep'), []);
+  assert(!canBeginAttack(s));
+  const before = structuredClone(s);
+  const skipped = execute(s, { type: 'skipStep' });
+  assert.notEqual(skipped, s);
+  assert.equal(skipped.slot, 1);
+  assert.equal(skipped.log[0], 'Quickstep blocked; step skipped.');
+  assert.deepEqual({ ...skipped, slot: before.slot, log: before.log }, before);
+  assert.deepEqual(s, before);
+  assert.deepEqual(availableAbilities(skipped), ['dash', 'strike', 'focus']);
+  assert.notEqual(act(skipped, 'strike', p(7, 1)), skipped);
+  // Skipping is optional: enough banked attunement can still open an attack turn first.
+  const banked = structuredClone(s);
+  banked.player.attunement = THRESHOLD;
+  assert.equal(execute(banked, { type: 'beginAttack' }).phase, 'attack');
+});
+
+test('blocked-step forfeiture is rejected outside a fully blocked first slot', () => {
+  const blocked = DIRS.map(d => p(4 + d.x, 4 + d.y));
+  const states: GameState[] = [fixture(), fixture({ walls: blocked.slice(1) })];
+  for (const slot of [1, 2] as const) states.push(fixture({ slot, walls: blocked }));
+  for (const phase of ['attack', 'resolve', 'cleared', 'won', 'lost'] as const) states.push(fixture({ phase, walls: blocked }));
+  for (const state of states) {
+    const before = structuredClone(state);
+    assert.equal(execute(state, { type: 'skipStep' }), state);
+    assert.deepEqual(state, before);
+  }
+});
+
 test('pulse reaches non-queen bearings and damages each shell only once', () => {
   const s = fixture({ enemies: [enemy(1, 7, 2), enemy(2, 1, 6)] });
   const result = pulse(s, true);
   assert.deepEqual(ids(result.hitIds), [1, 2]);
-  assert.equal(get(s, 1).guard, 3);
-  assert.equal(get(s, 2).guard, 3);
+  assert.equal(get(s, 1).guard, 15);
+  assert.equal(get(s, 2).guard, 15);
   assert.equal(get(s, 1).hp, 3);
 });
 
@@ -83,22 +138,22 @@ test('surviving shell casts a full silhouette shadow', () => {
   const s = fixture({ enemies: [enemy(1, 4, 2), enemy(2, 4, 0)] });
   const result = pulse(s, true);
   assert.deepEqual(result.hitIds, [1]);
-  assert.equal(get(s, 2).guard, 4);
+  assert.equal(get(s, 2).guard, 20);
   assert(result.shadowTiles.some(t => same(t, p(4, 0))));
 });
 
 test('pulse reaches partial exposure even when the target center is shadowed', () => {
   const s = fixture({ enemies: [enemy(1, 4, 2), enemy(2, 5, 0)] });
   assert.deepEqual(ids(pulse(s, true).hitIds), [1, 2]);
-  assert.equal(get(s, 2).guard, 3);
+  assert.equal(get(s, 2).guard, 15);
 });
 
 test('new breaches transmit through a chain during the same pulse', () => {
-  const s = fixture({ enemies: [enemy(1, 4, 3, { guard: 1 }), enemy(2, 4, 2, { guard: 1 }), enemy(3, 4, 0)] });
+  const s = fixture({ enemies: [enemy(1, 4, 3, { guard: 5 }), enemy(2, 4, 2, { guard: 5 }), enemy(3, 4, 0)] });
   const result = pulse(s, true);
   assert.deepEqual(ids(result.hitIds), [1, 2, 3]);
   assert.deepEqual(ids(result.breachedIds), [1, 2]);
-  assert.equal(get(s, 3).guard, 3);
+  assert.equal(get(s, 3).guard, 15);
   assert(get(s, 1).breached && get(s, 2).breached);
   assert.equal(get(s, 1).stun, 1);
 });
@@ -107,11 +162,11 @@ test('existing breaches transmit pulse without core damage', () => {
   const s = fixture({ enemies: [enemy(1, 4, 2, { guard: 0, breached: true, stun: 1 }), enemy(2, 4, 0)] });
   pulse(s, true);
   assert.equal(get(s, 1).hp, 3);
-  assert.equal(get(s, 2).guard, 3);
+  assert.equal(get(s, 2).guard, 15);
 });
 
 test('visible Opening breaches any Guard and cancels its intent', () => {
-  const front = incoming(1, p(4, 2), true, 50);
+  const front = incoming(1, p(4, 2), true, 250);
   front.opening = true;
   const s = fixture({ enemies: [front, enemy(2, 4, 0)] });
   pulse(s, true);
@@ -119,14 +174,14 @@ test('visible Opening breaches any Guard and cancels its intent', () => {
   assert.equal(get(s, 1).guard, 0);
   assert.equal(get(s, 1).intent, null);
   assert.equal(get(s, 1).opening, false);
-  assert.equal(get(s, 2).guard, 3);
+  assert.equal(get(s, 2).guard, 15);
 });
 
 test('shadowed Opening stays protected; walls never transmit', () => {
   const s = fixture({ enemies: [enemy(1, 4, 2), enemy(2, 4, 0, { opening: true })] });
   pulse(s, true);
   assert(!get(s, 2).breached);
-  assert.equal(get(s, 2).guard, 4);
+  assert.equal(get(s, 2).guard, 20);
   const w = fixture({ walls: [p(4, 2)], enemies: [enemy(2, 4, 0, { opening: true })] });
   assert.deepEqual(pulse(w, true).hitIds, []);
   assert(!get(w, 2).breached);
@@ -153,7 +208,7 @@ test('pulse preview is pure and predicts the applied result', () => {
 });
 
 test('pulse shadows and breaches are invariant under quarter turns', () => {
-  const source = fixture({ walls: [p(2, 3), p(5, 6)], enemies: [enemy(1, 4, 2), enemy(2, 5, 0), enemy(3, 1, 5, { guard: 1 }), enemy(4, 0, 5)] });
+  const source = fixture({ walls: [p(2, 3), p(5, 6)], enemies: [enemy(1, 4, 2), enemy(2, 5, 0), enemy(3, 1, 5, { guard: 5 }), enemy(4, 0, 5)] });
   const rotate = (t: Point) => p(SIZE - 1 - t.y, t.x);
   let s = source;
   let expected = pulse(s, false);
@@ -168,7 +223,7 @@ test('pulse shadows and breaches are invariant under quarter turns', () => {
 });
 
 test('the three slots expose only their specified normal abilities', () => {
-  const expected = [['quickstep', 'focus'], ['dash', 'strike', 'focus'], ['deflect', 'strike', 'focus']];
+  const expected = [['quickstep'], ['dash', 'strike', 'focus'], ['deflect', 'strike', 'focus']];
   expected.forEach((abilities, index) => {
     assert.deepEqual([...availableAbilities(fixture({ slot: index as 0|1|2 }))].sort(), [...abilities].sort());
   });
@@ -178,10 +233,11 @@ test('three actions never move or attack enemies until explicit resolution', () 
   const e = incoming(1, p(4, 2));
   e.intent!.destination = p(4, 3);
   let s = fixture({ enemies: [e] });
+  e.intent!.tiles = [p(5, 4)];
   for (let slot = 0; slot < 3; slot++) {
-    s = act(s, 'focus');
+    s = slot === 0 ? act(s, 'quickstep', p(5, 4)) : act(s, 'focus');
     assert.equal(s.player.hp, 12);
-    assert.equal(s.player.attunement, slot + 1);
+    assert.equal(s.player.attunement, slot);
     assert.equal(s.round, 1);
     assert.deepEqual(p(get(s, 1).x, get(s, 1).y), p(4, 2));
   }
@@ -196,7 +252,7 @@ test('three actions never move or attack enemies until explicit resolution', () 
 });
 
 test('Focus does nothing beyond attunement and slot progression', () => {
-  const s = fixture({ enemies: [enemy(1, 4, 2, { guard: 1 })] });
+  const s = fixture({ slot: 1, enemies: [enemy(1, 4, 2, { guard: 5 })] });
   const before = structuredClone(s);
   const after = act(s, 'focus');
   assert.deepEqual(s, before);
@@ -208,9 +264,32 @@ test('Focus does nothing beyond attunement and slot progression', () => {
   assert.equal(after.player.attunement, 1);
 });
 
+test('Focus is unavailable during Quickstep and cannot bypass the first slot', () => {
+  const s = fixture();
+  s.player.attunement = 9;
+  const before = structuredClone(s);
+  assert.deepEqual(availableAbilities(s), ['quickstep']);
+  assert.deepEqual(validTargets(s, 'focus'), []);
+  assert.equal(act(s, 'focus'), s);
+  assert.deepEqual(s, before);
+});
+
+test('Focus reaches the attunement cap and reports no gain at the cap', () => {
+  const s = fixture({ slot: 1 });
+  s.player.attunement = 9;
+  const capped = act(s, 'focus');
+  assert.equal(capped.player.attunement, 10);
+  assert.equal(capped.log[0], 'Focus: +1 attunement.');
+  const unchanged = act(capped, 'focus');
+  assert.equal(unchanged.player.attunement, 10);
+  assert.equal(unchanged.slot, 3);
+  assert.equal(unchanged.log[0], 'Focus: +0 attunement.');
+  assert.equal(s.player.attunement, 9);
+});
+
 for (const slot of [0, 1, 2, 3] as const) {
   test(`Offensive can interrupt and resume slot ${slot}, including the resolution boundary`, () => {
-    const s = fixture({ slot, phase: slot === 3 ? 'resolve' : 'normal', defenses: [{ kind: 'strike', direction: 2 }], enemies: [incoming(1, p(1, 1), false, 5)] });
+    const s = fixture({ slot, phase: slot === 3 ? 'resolve' : 'normal', defenses: [{ kind: 'strike', direction: 2 }], enemies: [incoming(1, p(1, 1), false, 25)] });
     s.player.attunement = THRESHOLD + 3;
     assert(canBeginAttack(s));
     const offensive = execute(s, { type: 'beginAttack' });
@@ -232,6 +311,8 @@ for (const slot of [0, 1, 2, 3] as const) {
 }
 
 test('Offensive threshold is exact and phase restrictions cannot be bypassed', () => {
+  assert.equal(THRESHOLD, 3);
+  assert.equal(MAX_ATTUNEMENT, 10);
   for (const attunement of [0, THRESHOLD - 1, THRESHOLD, 100]) {
     const s = fixture(); s.player.attunement = attunement;
     assert.equal(canBeginAttack(s), attunement >= THRESHOLD);
@@ -241,6 +322,39 @@ test('Offensive threshold is exact and phase restrictions cannot be bypassed', (
     const s = fixture({ phase }); s.player.attunement = 100;
     assert(!canBeginAttack(s));
   }
+});
+
+test('three attunement starts Offensive, two cannot, and charge never exceeds ten', () => {
+  for (const bank of [2, 3, 10, 100, Infinity]) {
+    const s = fixture();
+    s.player.attunement = bank;
+    const result = execute(s, { type: 'beginAttack' });
+    if (bank === 2) {
+      assert.equal(result, s);
+    } else {
+      assert.equal(result.phase, 'attack');
+      assert.equal(result.charge, Math.min(bank, 10));
+      assert.equal(result.player.attunement, 0);
+      assert.equal(s.player.attunement, bank);
+    }
+  }
+});
+
+test('Guard units scale all shells and attacks without changing their relative strength', () => {
+  assert.deepEqual(GUARD, { lunge: 10, sweep: 15, heavy: 20, strike: 10, counter: 10, pulse: 5, break: 15, regen: 10 });
+  const s = createGame(731);
+  assert.equal(s.version, STATE_VERSION);
+  assert.equal(s.version, 2);
+  for (const e of s.enemies) {
+    assert.equal(e.guard, GUARD[e.kind]);
+    assert.equal(e.maxGuard, GUARD[e.kind]);
+  }
+  const shell = fixture({ phase: 'attack', charge: 4, enemies: [enemy(1, 4, 3)] });
+  const broken = act(shell, 'break', p(4, 3));
+  assert.equal(get(broken, 1).guard, 5);
+  assert.equal(get(broken, 1).hp, 3);
+  assert.equal(broken.charge, 2);
+  assert.equal(pulse(broken, true).breachedIds[0], 1);
 });
 
 test('offensive time freezes Guard, stun, enemy positions, and intents', () => {
@@ -257,8 +371,8 @@ test('offensive time freezes Guard, stun, enemy positions, and intents', () => {
 test('Strike damages only the three-cell arc and stores only the center counter', () => {
   const s = fixture({ slot: 1, enemies: [enemy(1, 4, 3), enemy(2, 3, 3), enemy(3, 5, 3), enemy(4, 5, 4)] });
   const result = act(s, 'strike', p(4, 3));
-  for (const id of [1, 2, 3]) assert.equal(get(result, id).guard, 2);
-  assert.equal(get(result, 4).guard, 4);
+  for (const id of [1, 2, 3]) assert.equal(get(result, id).guard, 10);
+  assert.equal(get(result, 4).guard, 20);
   assert.deepEqual(result.defenses, [{ kind: 'strike', direction: 0 }]);
   assert(result.enemies.every(e => e.hp === 3));
 });
@@ -266,7 +380,7 @@ test('Strike damages only the three-cell arc and stores only the center counter'
 test('Deflect adds arc coverage without proactive Guard or life damage', () => {
   const s = fixture({ slot: 2, enemies: [enemy(1, 4, 3)] });
   const result = act(s, 'deflect', p(4, 3));
-  assert.equal(get(result, 1).guard, 4);
+  assert.equal(get(result, 1).guard, 20);
   assert.equal(get(result, 1).hp, 3);
   assert.deepEqual(result.defenses, [{ kind: 'deflect', direction: 0 }]);
 });
@@ -331,7 +445,7 @@ test('enemy attack footprints stay fixed when the player dodges', () => {
 });
 
 test('two Strikes retain both center counter directions through enemy resolution', () => {
-  let s = fixture({ slot: 1, enemies: [incoming(1, p(3, 4), false, 4), incoming(2, p(5, 4), false, 4)] });
+  let s = fixture({ slot: 1, enemies: [incoming(1, p(3, 4), false, 20), incoming(2, p(5, 4), false, 20)] });
   s = act(s, 'strike', p(3, 4));
   s = act(s, 'strike', p(5, 4));
   assert.deepEqual(s.defenses, [{ kind: 'strike', direction: 6 }, { kind: 'strike', direction: 2 }]);
@@ -341,18 +455,18 @@ test('two Strikes retain both center counter directions through enemy resolution
 });
 
 test('unbreached armor regenerates rapidly, while breach skips one resolution and restores armor', () => {
-  const s = fixture({ phase: 'resolve', slot: 3, enemies: [enemy(1, 0, 0, { guard: 1, maxGuard: 5 }), incoming(2, p(4, 3), true)] });
+  const s = fixture({ phase: 'resolve', slot: 3, enemies: [enemy(1, 0, 0, { guard: 5, maxGuard: 25 }), incoming(2, p(4, 3), true)] });
   get(s, 2).breached = true; get(s, 2).guard = 0; get(s, 2).stun = 1; get(s, 2).intent = null;
   const result = execute(s, { type: 'resolve' });
   assert.equal(result.player.hp, 12);
-  assert.equal(get(result, 1).guard, 3);
+  assert.equal(get(result, 1).guard, 15);
   assert.equal(get(result, 2).guard, get(result, 2).maxGuard);
   assert(!get(result, 2).breached);
   assert.equal(get(result, 2).stun, 0);
 });
 
 test('a Strike breach cancels an incoming Heavy without taking life', () => {
-  const s = fixture({ slot: 2, enemies: [incoming(1, p(4, 3), true, 2)] });
+  const s = fixture({ slot: 2, enemies: [incoming(1, p(4, 3), true, 10)] });
   const struck = act(s, 'strike', p(4, 3));
   assert(get(struck, 1).breached);
   assert.equal(get(struck, 1).intent, null);
@@ -408,6 +522,7 @@ test('all invalid commands preserve object identity and every field', () => {
   const cases: [GameState, Command][] = [
     [fixture(), { type: 'resolve' }], [fixture(), { type: 'endAttack' }], [fixture(), { type: 'nextRoom' }],
     [fixture(), { type: 'act', ability: 'strike', target: p(4, 3) }],
+    [fixture(), { type: 'act', ability: 'focus' }],
     [fixture(), { type: 'act', ability: 'quickstep', target: p(4, 1) }],
     [fixture(), { type: 'act', ability: 'quickstep', target: p(4, 4) }],
     [fixture({ slot: 1 }), { type: 'act', ability: 'dash', target: p(7, 2) }],

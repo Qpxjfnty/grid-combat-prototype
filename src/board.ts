@@ -16,7 +16,7 @@ export interface BoardFrame {
 const CELL = 58;
 const PAD = 24;
 const EDGE = CELL * SIZE + PAD * 2;
-const C = { bg: 0x101419, tile: 0x1d232a, grid: 0x343c47, text: '#f2f5f7', muted: '#adb7c5', wall: 0x4b535d, player: 0x8ed9ff, danger: 0xef827e, heavy: 0xffad6c, opening: 0xff4ed8, breach: 0xffd975, valid: 0x8ed9ff };
+const C = { bg: 0x101419, tile: 0x1d232a, grid: 0x343c47, text: '#f2f5f7', muted: '#adb7c5', wall: 0x4b535d, player: 0x8ed9ff, danger: 0xef827e, heavy: 0xffad6c, opening: 0xff4ed8, breach: 0xffd975, valid: 0x8ed9ff, hp: 0xf16c73, hpEmpty: 0x75343c };
 const eq = (a: Point, b: Point) => a.x === b.x && a.y === b.y;
 const coord = (p: Point) => ({ x: PAD + p.x * CELL + CELL / 2, y: PAD + p.y * CELL + CELL / 2 });
 
@@ -51,6 +51,10 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
     }
     outline(p: Point, color: number, width = 2, inset = 3) {
       this.layer.lineStyle(width, color, 1).strokeRect(PAD + p.x * CELL + inset, PAD + p.y * CELL + inset, CELL - inset * 2, CELL - inset * 2);
+    }
+    hpDot(x: number, y: number, radius: number, filled: boolean) {
+      if (filled) this.layer.fillStyle(C.hp, 1).fillCircle(x, y, radius);
+      else this.layer.fillStyle(0x25181d, 1).fillCircle(x, y, radius).lineStyle(1, C.hpEmpty, 1).strokeCircle(x, y, radius);
     }
     redraw() {
       const f = getFrame();
@@ -100,7 +104,6 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
         this.layer.fillStyle(C.valid, 0.8).fillCircle(c.x, c.y, 3);
       }
       for (const p of f.preview) this.tile(p, C.valid, 0.18, 2);
-      for (const e of s.enemies.filter(e => e.hp > 0)) this.enemy(e, s, pulse);
       if (inspected?.intent) {
         const a = coord(inspected);
         const b = coord(inspected.intent.destination);
@@ -110,10 +113,14 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
           this.outline(inspected.intent.destination, 0xf2f5f7, 2, 10);
         }
       }
+      for (const e of s.enemies.filter(e => e.hp > 0)) this.enemy(e, s, pulse);
       const player = coord(s.player);
-      this.layer.fillStyle(C.bg, 1).fillRect(player.x - 18, player.y - 20, 36, 40);
-      this.layer.lineStyle(2.5, C.player, 1).strokeRect(player.x - 18, player.y - 20, 36, 40);
-      this.text(player.x, player.y, 'P', 25, '#bdeaff', 'bold');
+      this.layer.fillStyle(C.bg, 1).fillRect(player.x - 20, player.y - 23, 40, 46);
+      this.layer.lineStyle(2.5, C.player, 1).strokeRect(player.x - 20, player.y - 23, 40, 46);
+      this.text(player.x, player.y - 7, 'P', 24, '#bdeaff', 'bold');
+      for (let n = 0; n < s.player.maxHp; n++) {
+        this.hpDot(player.x - 14.5 + (n % 6) * 5.8, player.y + 10 + Math.floor(n / 6) * 6.5, 2, n < s.player.hp);
+      }
       // Occupied targets must remain visibly selectable above their unit/wall art.
       for (const p of f.valid) {
         if (active.some(e => eq(e, p)) || s.walls.some(w => eq(w, p))) {
@@ -135,21 +142,19 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
     enemy(e: Enemy, _s: GameState, pulse: PulseResult | null) {
       const c = coord(e);
       const col = e.removed ? 0x798390 : e.breached ? C.breach : e.opening ? C.opening : 0xc9ced5;
-      if (e.removed) {
-        this.layer.lineStyle(1.5, col, 0.8).strokeRect(c.x - 18, c.y - 20, 36, 40);
-        this.text(c.x, c.y - 3, `${e.kind[0].toUpperCase()}${e.id}`, 15, '#8a96a5');
-        this.text(c.x, c.y + 13, 'return', 9, '#8a96a5');
-        return;
-      }
-      this.layer.fillStyle(C.bg, 0.92).fillRect(c.x - 19, c.y - 22, 38, 44);
-      this.layer.lineStyle(2, col, 1).strokeRect(c.x - 19, c.y - 22, 38, 44);
-      const color = e.breached ? '#ffdc81' : e.opening ? '#ff4ed8' : '#f2f5f7';
-      this.text(c.x, c.y - 8, `${e.kind[0].toUpperCase()}${e.id}`, 18, color, 'bold');
-      this.text(c.x, c.y + 8, `${e.hp} HP`, 11, color);
-      const pipWidth = Math.min(5, 30 / Math.max(e.maxGuard, 1));
-      const total = e.maxGuard * (pipWidth + 2) - 2;
-      for (let n = 0; n < e.maxGuard; n++) this.layer.fillStyle(n < e.guard ? col : 0x404750, 1).fillRect(c.x - total / 2 + n * (pipWidth + 2), c.y + 17, pipWidth, 3);
-      if (pulse?.hitIds.includes(e.id)) this.layer.fillStyle(C.player, 1).fillCircle(c.x + 24, c.y - 24, 2.5);
+      this.layer.fillStyle(C.bg, e.removed ? 0.6 : 0.96).fillRect(c.x - 23, c.y - 23, 46, 46);
+      this.layer.lineStyle(e.removed ? 1.5 : 2, col, e.removed ? 0.65 : 1).strokeRect(c.x - 23, c.y - 23, 46, 46);
+      const color = e.removed ? '#a0adbc' : e.breached ? '#ffdc81' : e.opening ? '#ff4ed8' : '#f2f5f7';
+      this.text(c.x, c.y - 13, e.removed ? 'return' : `${e.kind[0].toUpperCase()}${e.id}`, e.removed ? 10 : 16, color, e.removed ? 'normal' : 'bold');
+      const guardLabel = `${e.guard}/${e.maxGuard}`;
+      const guardRatio = Math.max(0, Math.min(1, e.guard / Math.max(1, e.maxGuard)));
+      this.layer.fillStyle(0x222b35, 1).fillRect(c.x - 20, c.y - 3, 40, 12);
+      this.layer.fillStyle(col, e.removed ? 0.3 : 0.46).fillRect(c.x - 20, c.y - 3, 40 * guardRatio, 12);
+      this.layer.lineStyle(1, col, e.removed ? 0.5 : 0.7).strokeRect(c.x - 20, c.y - 3, 40, 12);
+      this.text(c.x, c.y + 3, guardLabel, Math.min(12, 64 / guardLabel.length), color);
+      // Life sits immediately below the Guard bar, aligned to its right edge.
+      for (let n = 0; n < e.maxHp; n++) this.hpDot(c.x + 17.5 - (e.maxHp - 1 - n) * 7, c.y + 16, 2.5, n < e.hp);
+      if (!e.removed && pulse?.hitIds.includes(e.id)) this.layer.fillStyle(C.player, 1).fillCircle(c.x + 25, c.y - 25, 2.5);
     }
     animatePulse(origin: Point) {
       this.pulseEffect?.destroy();

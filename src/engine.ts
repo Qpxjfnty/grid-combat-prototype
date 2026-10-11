@@ -1,11 +1,11 @@
-import { Ability, Command, COSTS, DIRS, Direction, Enemy, EnemyKind, GameState, Point, SIZE, SLOTS, THRESHOLD, TOTAL_ROOMS } from './model';
+import { Ability, Command, COSTS, DIRS, Direction, Enemy, EnemyKind, GameState, GUARD, MAX_ATTUNEMENT, Point, SIZE, SLOTS, STATE_VERSION, THRESHOLD, TOTAL_ROOMS } from './model';
 import { arc, clearPath, directionTo, distance, inside, pulse, same } from './geometry';
 
 const kinds: EnemyKind[] = ['lunge', 'sweep', 'heavy'];
 const attributes = {
-  lunge: { guard: 2, hp: 2, reach: 3 },
-  sweep: { guard: 3, hp: 2, reach: 2 },
-  heavy: { guard: 4, hp: 3, reach: 2 },
+  lunge: { guard: GUARD.lunge, hp: 2, reach: 3 },
+  sweep: { guard: GUARD.sweep, hp: 2, reach: 2 },
+  heavy: { guard: GUARD.heavy, hp: 3, reach: 2 },
 };
 const active = (enemy: Enemy) => enemy.hp > 0 && !enemy.removed;
 const isWall = (state: GameState, point: Point) => state.walls.some(wall => same(wall, point));
@@ -101,7 +101,7 @@ function populateRoom(state: GameState): void {
 export function createGame(seed: number = Date.now()): GameState {
   const normalizedSeed = Number.isFinite(seed) ? Math.trunc(seed) >>> 0 : 1;
   const state: GameState = {
-    version: 1,
+    version: STATE_VERSION,
     seed: normalizedSeed,
     rng: normalizedSeed,
     room: 1,
@@ -290,7 +290,7 @@ function resolveEnemies(state: GameState): void {
     });
     if (countered) {
       counters++;
-      damageGuard(state, enemy, 2);
+      damageGuard(state, enemy, GUARD.counter);
     } else {
       state.player.hp = Math.max(0, state.player.hp - (intent.heavy ? 2 : 1));
       hits++;
@@ -305,7 +305,7 @@ function resolveEnemies(state: GameState): void {
         enemy.breached = false;
       }
     } else if (!enemy.breached) {
-      enemy.guard = Math.min(enemy.maxGuard, enemy.guard + 2);
+      enemy.guard = Math.min(enemy.maxGuard, enemy.guard + GUARD.regen);
     }
     enemy.intent = null;
   }
@@ -320,12 +320,19 @@ function resolveEnemies(state: GameState): void {
 }
 
 export function execute(state: GameState, command: Command): GameState {
+  if (command.type === 'skipStep') {
+    if (state.phase !== 'normal' || state.slot !== 0 || validTargets(state, 'quickstep').length > 0) return state;
+    const next = structuredClone(state);
+    next.slot = 1;
+    log(next, 'Quickstep blocked; step skipped.');
+    return next;
+  }
   if (command.type === 'beginAttack') {
     if (!canBeginAttack(state)) return state;
     const next = structuredClone(state);
     next.resumePhase = state.phase as 'normal' | 'resolve';
     next.phase = 'attack';
-    next.charge = next.player.attunement;
+    next.charge = Math.min(MAX_ATTUNEMENT, Math.max(0, Math.floor(next.player.attunement)));
     next.player.attunement = 0;
     next.pulse = pulse(next, true);
     log(next, `Attack turn: ${next.charge} charge. Pulse hit ${next.pulse.hitIds.length}, breached ${next.pulse.breachedIds.length}.`);
@@ -356,8 +363,9 @@ export function execute(state: GameState, command: Command): GameState {
   if (ability !== 'focus' && (!target || !Number.isInteger(target.x) || !Number.isInteger(target.y) || !validTargets(state, ability).some(point => same(point, target)))) return state;
   const next = structuredClone(state);
   if (ability === 'focus') {
-    next.player.attunement++;
-    log(next, 'Focus: +1 attunement.');
+    const before = next.player.attunement;
+    next.player.attunement = Math.min(MAX_ATTUNEMENT, before + 1);
+    log(next, `Focus: +${Math.max(0, next.player.attunement - before)} attunement.`);
   } else if (ability === 'quickstep' || ability === 'dash' || ability === 'shift') {
     next.player.x = target!.x;
     next.player.y = target!.y;
@@ -369,10 +377,10 @@ export function execute(state: GameState, command: Command): GameState {
     const direction = directionTo(next.player, target!);
     const tiles = attackArc(next, next.player, direction);
     for (const enemy of next.enemies) {
-      if (tiles.some(point => same(point, enemy))) damageGuard(next, enemy, ability === 'strike' ? 2 : 3);
+      if (tiles.some(point => same(point, enemy))) damageGuard(next, enemy, ability === 'strike' ? GUARD.strike : GUARD.break);
     }
     if (ability === 'strike') next.defenses.push({ kind: 'strike', direction });
-    log(next, ability === 'strike' ? 'Strike: 2 Guard in arc; center direction counters normal attacks.' : 'Break: 3 Guard in arc.');
+    log(next, ability === 'strike' ? `Strike: ${GUARD.strike} Guard in arc; center direction counters normal attacks.` : `Break: ${GUARD.break} Guard in arc.`);
   } else {
     const enemy = occupant(next, target!)!;
     const damage = ability === 'core2' ? 2 : 1;

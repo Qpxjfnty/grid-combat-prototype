@@ -8,13 +8,15 @@ A small, touch-friendly roguelike combat prototype. Fresh TypeScript simulation,
 
 Select an action, tap a highlighted tile, then confirm. Focus takes effect immediately. Tap an enemy to inspect its Guard, life, opening, and next attack. Marked attack tiles show where the enemies will hit after the three action slots; movement destinations show their gap closers.
 
-1. Quickstep or Focus.
+1. Quickstep.
 2. Dash, Strike, or Focus.
 3. Deflect, Strike, or Focus.
 
+Guard is a depleting bar with integer current/max values. Red dots beneath its right edge show enemy HP; the player also uses red HP dots. Existing saved runs are migrated automatically. If Quickstep has no legal target, you can skip only that blocked slot without gaining attunement.
+
 Enemies wait until **Resolve enemies**. Strike counters and Deflect persist through that resolution. The extra confirmation allows an attack-turn interrupt after the third action too.
 
-At **4 attunement**, use Attack turn at any decision point. The opening pulse takes 1 Guard from exposed enemies, instantly breaches pink openings, and passes through breached enemies. Intact armor and walls cast angular shadows. Spend the bank on Shift, Break, Core, and Core ×2. End attack discards unused charge and returns to the same action slot. A core-hit survivor leaves the board until the phase ends and returns with restored armor.
+At **3 attunement** (maximum **10**), use Attack turn at any decision point. The opening pulse takes 5 Guard from exposed enemies, instantly breaches pink openings, and passes through breached enemies. Intact armor and walls cast angular shadows. Spend the bank on Shift, Break, Core, and Core ×2. End attack discards unused charge and returns to the same action slot. A core-hit survivor leaves the board until the phase ends and returns with restored armor.
 
 Clear five seeded arenas without losing all HP. Next arena restores 3 HP. New-run controls let you replay a seed. Rules are also available inside the game.
 

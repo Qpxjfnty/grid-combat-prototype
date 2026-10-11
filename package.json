@@ -1,6 +1,6 @@
 {
   "name": "grid-combat-prototype",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": { "dev": "vite --host 0.0.0.0", "build": "tsc --noEmit && vite build", "test": "tsx --test tests/*.test.ts", "preview": "vite preview --host 0.0.0.0" },

@@ -1,4 +1,4 @@
-import { DIRS, SIZE, type Direction, type GameState, type Point, type PulseResult } from './model';
+import { DIRS, GUARD, SIZE, type Direction, type GameState, type Point, type PulseResult } from './model';
 
 export const same = (a: Point, b: Point) => a.x === b.x && a.y === b.y;
 export const inside = (p: Point) => Number.isInteger(p.x) && Number.isInteger(p.y) && p.x >= 0 && p.y >= 0 && p.x < SIZE && p.y < SIZE;
@@ -80,7 +80,7 @@ export function pulse(state: GameState, apply = false): PulseResult {
     if (!enemy || enemy.breached) continue;
     if (!hit.has(enemy.id)) {
       hit.add(enemy.id); hitIds.push(enemy.id);
-      enemy.guard = enemy.opening ? 0 : Math.max(0, enemy.guard - 1);
+      enemy.guard = enemy.opening ? 0 : Math.max(0, enemy.guard - GUARD.pulse);
       if (enemy.guard === 0) {
         enemy.breached = true; enemy.stun = 1; enemy.intent = null; enemy.opening = false;
         breachedIds.push(enemy.id);
