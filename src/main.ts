@@ -6,7 +6,8 @@ import { COSTS, GUARD, MAX_ATTUNEMENT, SIZE, THRESHOLD, TOTAL_ROOMS, type Abilit
 
 import { parseSaveRecord, type SaveRecord } from './save';
 
-const SAVE_KEY = 'grid-combat-prototype.v1';
+const SAVE_KEY = 'grid-combat-prototype.v2';
+const LEGACY_SAVE_KEY = 'grid-combat-prototype.v1';
 const eq = (a: Point, b: Point) => a.x === b.x && a.y === b.y;
 const coordinate = (p: Point) => `${String.fromCharCode(65 + p.x)}${p.y + 1}`;
 const names: Record<Ability, string> = { quickstep: 'Quickstep', dash: 'Dash', deflect: 'Deflect', strike: 'Strike', focus: 'Focus', shift: 'Shift', break: 'Break', core: 'Core', core2: 'Core ×2' };
@@ -66,9 +67,14 @@ root.innerHTML = `
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 function readSave(): SaveRecord | null {
-  try { return parseSaveRecord(localStorage.getItem(SAVE_KEY)); } catch { return null; }
+  try {
+    const current = localStorage.getItem(SAVE_KEY);
+    return parseSaveRecord(current ?? localStorage.getItem(LEGACY_SAVE_KEY));
+  } catch { return null; }
 }
 const initialSave = readSave();
+let needsCurrentSave = true;
+try { needsCurrentSave = localStorage.getItem(SAVE_KEY) === null; } catch { /* Saving below reports unavailable storage. */ }
 let state = initialSave?.state ?? createGame();
 let knownToken = initialSave?.token ?? null;
 let selectedAbility: Ability | null = null;
@@ -265,5 +271,5 @@ window.addEventListener('keydown', event => {
 // QA boundary: state is copied on read, and dispatch uses the same validated
 // commands as visible controls. This does not expose mutation of live state.
 Object.defineProperty(window, 'combatDebug', { value: Object.freeze({ getState: () => structuredClone(state), dispatch: (command: Command) => dispatch(command) }), writable: false });
-if (!initialSave) save();
+if (!initialSave || needsCurrentSave) save();
 render();

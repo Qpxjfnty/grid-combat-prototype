@@ -4,7 +4,7 @@ Version 0.2 verified on 11 October 2026.
 
 - 54 combat and save tests pass, including threshold 3, cap 10, removal of Focus from Quickstep, larger integer Guard pools and proportional damage, saved-run migration, and a legally reached corner trap with the conditional blocked-step skip.
 - WebKit iPad touch checks verify Quickstep-only slot 1 (including rejection of the F shortcut), two Focus actions banking 2, attack activation at 3, Focus clamping at 10, and no-reward skip when Quickstep is blocked.
-- Existing saves retain run progress, migrate Guard exactly once, and clamp excess banked attunement/charge to 10. A browser reload confirms migration.
+- Existing saves retain run progress, migrate Guard exactly once, and clamp excess banked attunement/charge to 10. A browser reload confirms migration. Migrated runs use separate version-2 storage so an older open game tab cannot overwrite them.
 - Guard 12/35 renders a proportional depleting bar. Enemy life is red dots aligned beneath its right edge. Player life is red dots in the HUD and on the board; depleted life is shown as empty dots.
 - Visually inspected the updated board and inspection display at iPad portrait widths of 768 and 834 pixels. No horizontal overflow or browser console errors were observed. Production typecheck/build pass.
 
