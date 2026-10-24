@@ -1,37 +1,100 @@
-# Combat prototype rules, version 0.2
+# Combat prototype rules, version 0.3
 
-Fresh implementation. No setting, story, decorative assets, or inherited game code.
+A fresh, placeholder-only combat prototype with a minimal interface. This version uses a 7 × 7 arena and one normal action per turn.
 
-## Confirmed timing
+## Turn structure
 
-The player takes three actions, in order: Quickstep; Dash/Strike/Focus; Deflect/Strike/Focus. **Enemies act only after all three actions**, as requested. There is an explicit Resolve enemies step after the third action so an offensive turn remains possible before resolution. Planning and inspection never advance time.
+Choose **Dash**, **Light Attack**, or **Deflect**. Confirming a legal action commits it and immediately resolves the enemies’ advertised intentions. There are no action slots or separate Resolve enemies button. Quickstep, Focus, and the previous frozen combo abilities are absent.
 
-Strike counters and Deflect remain active until enemies resolve. Their selected directions are relative to the player's current position. Multiple Strike center directions are retained. An offensive turn freezes and resumes the exact slot, defense state, and existing enemy intentions. It never advances enemy time.
+Target selection, previews, hover, and tap inspection are free. Enemies show their intended movement destination and attack tiles before the player acts. Light Attack’s parry and Deflect’s protection apply to the response immediately following that action, then expire.
 
-## Spatial rules
+At a normal decision point with at least 3 banked charge, the player may enter Freeze before committing an action. A normal action and its enemy response resolve together; Freeze cannot interrupt between them. Entering, acting during, and ending Freeze never advance enemy time. Existing enemy intentions remain fixed unless a breach or core hit cancels them.
 
-9 × 9 playable tiles. Eight adjacent directions, including diagonals. A three-tile arc is three consecutive neighbors among those eight; select its center direction. Quickstep moves to any open adjacent tile, including diagonally between obstacles. Dash/Shift move along a clear queen line to an empty tile. Walls and active enemies block traversal; Dash/Shift cannot cut a blocked corner. Deflect stops every attack approaching from its three directions, including Heavy. Strike counters only non-Heavy attacks from its center direction. Avoiding a Heavy attack's marked tiles is also allowed; breaching its attacker interrupts it.
+## Grid and movement
 
-Strike deals 10 Guard to each enemy in its arc. Successful counters deal 10 Guard. Normal actions never damage life. Deflect has no proactive damage. Focus is available only in actions 2 and 3 and adds 1 attunement, capped at 10. If every Quickstep target is blocked in action 1, the player may skip that slot without gaining attunement or advancing enemy time.
+The playfield is 7 × 7, with eight neighboring directions. Dash follows a clear queen line: any horizontal, vertical, or 45-degree diagonal distance to an empty tile. Walls and active enemies block the path and destination. Diagonal movement cannot cut a blocked corner. Dash Attack uses the same movement restrictions and must actually move.
 
-## Offensive phase
+An attack arc consists of consecutive neighboring tiles around its origin. Light Attack covers three neighbors; Deflect protects five neighboring directions. Select the middle adjacent direction to orient either. Walls are excluded from damage previews. Dash Attack’s three-tile arc originates at its landing tile and faces the actual movement direction, with no separate aiming step.
 
-At 3 or more attunement, enter at any decision point, including before enemy resolution. Transfer all attunement to temporary charge, set attunement to zero, and emit a pulse. Charge remaining when the phase ends is lost. No enemies move, attack, recover, regenerate, or change intentions while time is frozen.
+## Normal actions and charge
 
-Pulse expands radially in all directions. Occlusion uses angular intervals subtended by whole tile footprints, not eight rays. Walls block. Enemies are processed near to far; a visible armored enemy takes 5 Guard. A pink enemy is instantly breached. Already-breached or newly-breached enemies do not block the pulse. Surviving armor casts a full tile-width angular shadow. A partially visible tile is reachable if any nonzero angular interval is exposed.
+| Action | Effect | Charge rule |
+| --- | --- | --- |
+| Dash | Move along a clear queen line. No attack or defense is added. | No cost or gain |
+| Light Attack | Deal 2 Guard to the center neighbor and 1 Guard to each side neighbor. Parries non-Heavy incoming attacks from the center direction only. | Gain 2 once if at least one enemy is hit, regardless of the number hit; bank cannot exceed 10 |
+| Deflect | Protect the selected direction and two neighboring directions on each side: five directions in total. Blocks all incoming attacks from those directions, including Heavy. | Spend 1 banked charge; unavailable at zero |
 
-Prototype combo actions: Shift costs 1 (queen move); Break costs 2 (15 Guard to a three-tile arc); Core costs 1 (1 life from an adjacent breached enemy); Core ×2 costs 3 (2 life). Core hits remove the target for the rest of that offensive phase and restore its armor. Removed enemies do not block movement or pulse. Survivors return at phase end to their tile or the nearest available tile if occupied. Their interrupted intentions stay canceled until the next enemy planning step.
+Light Attack never directly damages HP, including when it hits an already-breached enemy. A miss gives no charge. Its parry does not deal extra Guard or HP damage and gives no extra charge. Deflect deals no damage and generates no charge. Moving out of an attack’s marked footprint remains another way to avoid it.
 
-Guard is an integer pool: Lunge 10, Sweep 15, Heavy 20. All Guard pools, damage, and regeneration are scaled fivefold from version 0.1, preserving break timing. Continuous bars show current/max Guard; red HP dots sit beneath the right end. Player HP is also red dots. Previous saves migrate their Guard amounts by the same factor and clamp attunement/charge to 10 while retaining run progress.
+The player starts with zero charge. The bank caps at 10, and Freeze requires a minimum of 3.
 
-## Enemies and run
+## Freeze and its entry pulse
 
-Placeholder Lunge, Sweep, and Heavy units move and attack in small arenas. Their exact destination and attack tiles are marked before the player's actions. Lunge closes distance; Sweep hits an arc; Heavy hits a larger area and cannot be stopped by Strike counters. Openings occur in predictable recovery cycles and are bright pink.
+Entering Freeze transfers the **entire bank** into a temporary attack budget and sets the normal bank to zero. It emits one radial pulse without deducting an additional charge. Ending Freeze loses all unused budget. It returns to a normal decision point without an enemy response or regeneration step.
 
-Guard regenerates by 10 per enemy resolution when unbreached. Breach cancels the current intention and stuns through the next enemy resolution, after which Guard restores. A breach never directly damages life. Enemies lose only 1 or 2 life per core hit and cannot be hit again during the same offensive phase.
+The pulse radiates through 360 degrees. Visibility uses angular intervals subtended by whole tile footprints, rather than eight straight rays. Walls block it. Enemies are processed near to far:
 
-Five seeded arenas, increasing enemy count, permadeath, restart, and automatic browser-local save. Clear an arena to recover 3 HP (up to maximum) and advance. No progression upgrades in this combat-focused slice. Seeded layouts keep open connectivity and usable space around the player. Initial balance numbers are playtest assumptions.
+- A visible armored enemy takes 5 Guard damage.
+- A visible enemy with a bright pink opening breaches instantly, regardless of remaining Guard.
+- Already-breached enemies and enemies breached by this pulse let it pass through.
+- Armor that survives absorbs the pulse and casts a shadow behind its tile.
+- A partially visible tile is reachable when a nonzero part of its angular interval remains exposed.
 
-## Implementation and validation
+No enemies move, attack, recover, regenerate, or replan during Freeze. The pulse reach display and its shadow snapshot are inspection aids; they do not spend time or charge.
 
-TypeScript simulation independent of Phaser; canvas board and DOM controls. Tap action, tap target, confirm. Large touch controls, no hover dependency, responsive portrait/landscape layout. Pulse preview and explicit enemy details support rule verification. Vitest is unnecessary: deterministic tests run through Node's test runner with tsx. Verify mobile input and rendering in browsers, distinguish emulation from actual physical iPad testing. GitHub Pages publishes the static production build.
+## Dash Attack
+
+**Dash Attack is the only action during Freeze and costs 1 charge.** First move to a legal queen-line destination, then hit the three adjacent tiles facing along the movement direction. The preview shows the path, landing tile, and forward arc. Direction cannot be chosen independently of movement.
+
+Each enemy in that arc resolves exactly one damage layer:
+
+- If armored when this hit begins, take 5 Guard damage. Reaching zero breaches and interrupts the enemy, with no HP damage spilling through.
+- If already breached when this hit begins, lose exactly 1 HP. Restore its armor and remove it from combat for the remainder of this Freeze.
+
+For example, a target with 5 Guard is breached by one Dash Attack but loses no HP. A later Dash Attack that reaches its exposed core removes 1 HP. That target then cannot be hit again during the same Freeze.
+
+Removed enemies do not block movement. A surviving enemy returns when Freeze ends, at its former tile or the nearest available tile if that tile is occupied. Its canceled intention stays canceled until the next normal enemy planning step. Enemies at zero HP are defeated permanently. At zero frozen budget, the player must End Freeze; there is no free movement or attack.
+
+## Armor, enemies, and recovery
+
+| Placeholder | Starting Guard | HP | Attack |
+| --- | ---: | ---: | --- |
+| Lunge | 5 | 1 | Gap-closing movement and a narrow attack; 1 damage |
+| Sweep | 15 | 2 | Mobile three-tile arc; 1 damage |
+| Heavy | 20 | 3 | Mobile larger footprint; 2 damage; Light Attack cannot parry it |
+
+Guard protects all HP. Breaching cancels the current intention and stuns the enemy through the next enemy response. At the end of that response, its Guard restores. Unbreached enemies regenerate **10 Guard per normal enemy response**, up to their maximum. Breaching itself never removes HP.
+
+Openings follow enemy cycles and appear in bright pink. Breached enemies appear yellow. Core-hit survivors are shown as return markers until Freeze ends. Their Guard is a continuous depleting bar with integer current/max values. Red HP dots sit immediately beneath the bar’s right edge; hollow dark red dots indicate lost HP. The player also uses red HP dots.
+
+## Run and interface
+
+A run spans five seeded arenas. The player starts with 12 HP. Clearing an arena allows advancement and restores 3 HP, capped at maximum. Later arenas increase the enemy count from three to five. Layout generation preserves connected open space and room around the starting tile. Zero HP ends the run. There are no progression upgrades in this combat slice.
+
+The persistent interface contains the board, player HP and charge, available actions, and contextual targeting or inspection. Touch input uses action → target → confirm. Hover and tap inspection expose enemy Guard, HP, openings, destinations, and attack tiles without spending a turn. Detailed controls, rules, and display options are collapsed under Controls & rules; seed and restart controls are under Run.
+
+Functional colors remain consistent between action buttons, selected states, confirmations, target markers, and previews:
+
+| Action | Color |
+| --- | --- |
+| Dash | Muted green `#91ad94` |
+| Light Attack | Muted light beige `#c5baa0` |
+| Deflect | Muted sky blue `#91b4cb` |
+| Freeze and its pulse | Muted pink `#c79cab` |
+| Dash Attack | Gold `#d0b166` |
+
+Enemy openings retain their distinct bright pink. The interface uses placeholders and functional state indicators, with no decorative assets or flavor.
+
+## Persistence and implementation
+
+Version 3 saves use a separate browser storage entry for the 7 × 7 rules, including the current frozen budget and removed enemies. Version 1 and 2 saves remain untouched. Their 9 × 9 runs are not migrated into this ruleset. Restarting replaces only the current version’s saved run.
+
+The TypeScript simulation is independent of Phaser. The board uses canvas; text and controls use the DOM. Responsive sizing preserves square tiles and updates pointer coordinates after resizing. Reduced-motion preferences suppress the pulse animation. GitHub Pages serves the static production build.
+
+## Balance assumptions and validation scope
+
+The action timing, action set, charge rules, damage layers, and fixed movement-facing Dash Attack above define this revision. Existing regeneration of 10 Guard per response is retained as prototype tuning, along with player HP, healing, arena count, enemy density, and enemy cycle timing. These values still need playtesting.
+
+Because regeneration exceeds Light Attack’s 1–2 Guard damage, Light Attack primarily builds charge and provides a narrow parry. Repeated normal attacks do not steadily wear down intact armor under the current tuning. An enemy already at sufficiently low Guard can still be breached by Light Attack. Whether this produces the intended rhythm between normal combat and Freeze is a balance question, not a verified result.
+
+Regression tests should cover one-action enemy timing, charge costs and gains, five-direction Deflect, radial pulse occlusion, direction-fixed Dash Attack, no HP spill on breach, temporary enemy removal, and separate save versions. Browser review should cover touch and keyboard confirmation, hover inspection, action colors, readable vitals, and orientation changes. Emulated mobile browser checks must be distinguished from testing on a physical iPad. This document specifies behavior and validation targets; it makes no claim that this revision has passed those checks.

@@ -6,21 +6,15 @@ import { COSTS, GUARD, MAX_ATTUNEMENT, SIZE, THRESHOLD, TOTAL_ROOMS, type Abilit
 
 import { parseSaveRecord, type SaveRecord } from './save';
 
-const SAVE_KEY = 'grid-combat-prototype.v2';
-const LEGACY_SAVE_KEY = 'grid-combat-prototype.v1';
+const SAVE_KEY = 'grid-combat-prototype.v3';
 const eq = (a: Point, b: Point) => a.x === b.x && a.y === b.y;
 const coordinate = (p: Point) => `${String.fromCharCode(65 + p.x)}${p.y + 1}`;
-const names: Record<Ability, string> = { quickstep: 'Quickstep', dash: 'Dash', deflect: 'Deflect', strike: 'Strike', focus: 'Focus', shift: 'Shift', break: 'Break', core: 'Core', core2: 'Core ×2' };
+const names: Record<Ability, string> = { dash: 'Dash', light: 'Light attack', deflect: 'Deflect', dashAttack: 'Dash attack' };
 const descriptions: Record<Ability, string> = {
-  quickstep: 'Move one tile to an open adjacent square.',
-  dash: 'Move along a clear row, column, or diagonal to an empty tile.',
-  deflect: 'Choose the middle of a three-tile arc. Counter all attacks from those directions, including Heavy.',
-  strike: `Deal ${GUARD.strike} Guard damage in a three-tile arc. Its center direction counters non-Heavy attacks.`,
-  focus: `Gain 1 attunement, up to ${MAX_ATTUNEMENT}. Do nothing else.`,
-  shift: 'Spend 1 charge. Move along a clear row, column, or diagonal.',
-  break: `Spend 2 charge. Deal ${GUARD.break} Guard damage in a three-tile arc.`,
-  core: 'Spend 1 charge. Take 1 HP from an adjacent breached enemy; remove it until this attack turn ends.',
-  core2: 'Spend 3 charge. Take 2 HP from an adjacent breached enemy; remove it until this attack turn ends.',
+  dash: 'Choose an empty tile along a clear row, column, or diagonal. No charge cost or gain.',
+  light: 'Choose an arc: 2 Guard to the center, 1 to each side. +2 charge on a hit. Parries the center direction, except Heavy.',
+  deflect: 'Spend 1 charge. Choose a five-tile arc to block attacks, including Heavy.',
+  dashAttack: 'Spend 1 charge. Dash, then hit the three tiles ahead for 5 Guard. Exposed cores lose 1 HP.',
 };
 const root = document.querySelector<HTMLDivElement>('#app')!;
 root.innerHTML = `
@@ -30,52 +24,47 @@ root.innerHTML = `
     <div class="play-layout">
       <section class="board-column" aria-label="Playfield">
         <div id="board" class="board"></div>
-        <div class="board-options"><label><input type="checkbox" id="threats" checked> Enemy attack tiles</label><label id="pulse-option"><input type="checkbox" id="pulse-preview"> Pulse reach</label></div>
         <p class="legend"><span><b>P</b> player</span><span>L / S / H enemies</span><span>▬ Guard</span><span class="hp-key">● HP</span><span class="pink">■ opening</span><span class="yellow">■ breached</span></p>
         <p class="board-note" id="board-note"></p>
       </section>
       <section class="controls" aria-label="Combat controls">
-        <div class="turn-heading"><h2 id="phase-title"></h2><span id="time-label"></span></div>
-        <ol class="steps" id="steps" aria-label="Action order"><li>1 <span>Quickstep</span></li><li>2 <span>Dash / Strike / Focus</span></li><li>3 <span>Deflect / Strike / Focus</span></li></ol>
+        <div class="turn-heading"><h2 id="phase-title"></h2></div>
         <div id="abilities" class="abilities"></div>
         <p id="instruction" class="instruction" role="status" aria-live="polite"></p>
         <div id="target-controls" class="target-controls"><button id="confirm" class="primary" disabled>Confirm</button><button id="cancel" class="quiet">Cancel</button></div>
         <div id="phase-controls" class="phase-controls"></div>
         <div id="attack-controls" class="attack-controls"></div>
-        <section class="inspection" aria-label="Tile inspection"><div class="inspect-heading"><h3 id="inspect-title">Inspect</h3><button id="clear-inspect" class="text-button" hidden>Clear</button></div><div id="inspect-vitals"></div><p id="inspect-info">Hover a tile to inspect it. Tap or click to keep its details.</p></section>
-        <div class="log" aria-live="polite" aria-label="Recent events"><p id="log1"></p><p id="log2"></p></div>
+        <section class="inspection" aria-label="Tile inspection" hidden><div class="inspect-heading"><h3 id="inspect-title">Inspect</h3><button id="clear-inspect" class="text-button" hidden>Clear</button></div><div id="inspect-vitals"></div><p id="inspect-info"></p></section>
+        <p id="last-event" class="last-event" aria-live="polite"></p>
       </section>
     </div>
-    <p id="save-note" class="save-note" role="status"></p>
     <div class="details-row">
-      <details><summary>Rules & controls</summary><div class="rules">
-        <p><strong>Each turn:</strong> take actions 1, 2, and 3 in order. Then select <strong>Resolve enemies</strong>. Enemies act only after all three actions. Inspecting and choosing targets is free.</p>
-        <p><strong>Movement:</strong> Quickstep moves to any open adjacent tile, including diagonally past a corner. If none is open, you can skip that slot without gaining attunement. Dash and Shift follow a clear row, column, or diagonal. Units and walls block Dash and Shift, and neither can cut a blocked diagonal corner.</p>
-        <p><strong>Arcs:</strong> choose the middle adjacent tile. An arc covers that neighbor and the neighbor on either side. Strike damages Guard by ${GUARD.strike} and counters only non-Heavy attacks from its center direction. Deflect counters all attacks in its arc, including Heavy. Both remain active until enemy resolution and move with you.</p>
-        <p><strong>Focus:</strong> available only in actions 2 and 3. +1 attunement up to ${MAX_ATTUNEMENT}, and nothing else. At ${THRESHOLD}+ attunement, start an attack turn at any decision point. It freezes time, spends all banked attunement into charge, and pulses once. Ending it discards unused charge and resumes your exact action slot.</p>
+      <details><summary>Controls & rules</summary><div class="board-options"><label><input type="checkbox" id="threats" checked> Enemy attack tiles</label><label id="pulse-option"><input type="checkbox" id="pulse-preview"> Pulse reach</label></div><div class="rules">
+        <p><strong>Each turn:</strong> choose Dash, Light attack, or Deflect. Select a target and confirm. Enemies respond immediately after that one action. Inspection and targeting are free.</p>
+        <p><strong>Dash:</strong> move along a clear row, column, or diagonal to an empty tile. No charge cost or gain. Walls and active enemies block movement; you cannot cut a blocked diagonal corner.</p>
+        <p><strong>Light attack:</strong> select the center of three consecutive neighboring tiles. Deal ${GUARD.lightCenter} Guard damage to the center and ${GUARD.lightSide} to each side. Gain 2 charge once if any enemy is hit, capped at ${MAX_ATTUNEMENT}. Parries incoming attacks from the center direction, except Heavy. A parry does not cancel the Light attack's damage or add extra damage.</p>
+        <p><strong>Deflect:</strong> costs 1 charge. Select the center of five consecutive neighboring tiles. Blocks attacks from all five directions, including Heavy. Deals no damage and gains no charge.</p>
+        <p><strong>Freeze time:</strong> available at ${THRESHOLD}+ charge. All banked charge becomes the frozen-time budget, and a pulse fires once. Ending the freeze discards unused charge. Enemies do not move, attack, recover, or regenerate during frozen time.</p>
         <p><strong>Pulse:</strong> radial line of sight, ${GUARD.pulse} Guard damage. Pink openings breach instantly. Walls and enemies whose Guard survives cast shadows; breached enemies let the pulse pass through. The reach preview shows the exact resulting visibility, including enemies the pulse will breach.</p>
-        <p><strong>Combo:</strong> Shift costs 1 for a queen move; Break costs 2 for ${GUARD.break} Guard damage in an arc; Core costs 1 for 1 HP; Core ×2 costs 3 for 2 HP. Core requires an adjacent breached enemy. A core hit restores armor and removes that enemy until this attack turn ends.</p>
+        <p><strong>Dash attack:</strong> the only frozen-time ability. Costs 1 charge. Dash to an empty tile, then hit the three adjacent tiles facing the direction you dashed for ${GUARD.dashAttack} Guard each. The attack always faces forward; it cannot be aimed separately. Hitting an already-breached enemy instead removes 1 HP. A surviving core-hit enemy restores Guard and leaves combat until time resumes. Newly breaching Guard does not damage HP on that same hit.</p>
         <p><strong>Armor:</strong> Guard protects all HP. The bar shows remaining integer Guard. Red dots beneath its right end show HP; empty dots are lost HP. A breach interrupts and stuns through the next enemy resolution. Unbreached Guard regenerates by ${GUARD.regen} per resolution. Breached Guard restores after the stun. No regeneration or enemy movement occurs during an attack turn.</p>
         <p><strong>Inspection:</strong> hover any tile to see its contents, incoming attacks, and planned arrivals. Hover an enemy to see its Guard, HP, planned destination, and attack tiles. Tap or click to keep the inspection after the pointer leaves. Hovering never changes an action target or advances time.</p>
-        <p><strong>Enemy types:</strong> L = Lunge, S = Sweep, H = Heavy. Pink means an opening. Yellow means breached. An outline marked “return” shows an enemy removed until the attack turn ends.</p>
+        <p><strong>Enemy types:</strong> L = basic Lunge (${GUARD.lunge} Guard, 1 HP), S = Sweep, H = Heavy. Pink means an opening. Yellow means breached. “Return” marks a survivor removed until time resumes.</p>
         <p><strong>Run:</strong> clear ${TOTAL_ROOMS} small seeded arenas. Recover 3 HP between arenas. Zero HP ends the run. Your current run saves automatically in this browser.</p>
-        <p><strong>Touch:</strong> choose an action, tap a highlighted tile, then confirm. Focus is immediate. <strong>Keyboard:</strong> 1–4 select an ability; arrows or numpad move the target cursor; Enter confirms; F focuses; A starts an attack turn; Escape cancels. Enemy inspection is also available below.</p>
+        <p><strong>Keyboard:</strong> 1–3 select an ability; arrows or numpad move the target cursor; Enter confirms; F freezes time; Escape cancels. Mouse and touch use the same action → target → confirm flow.</p>
         <details><summary>Enemy list</summary><div id="enemy-list" class="enemy-list"></div></details>
       </div></details>
-      <details><summary>Run & seed</summary><div class="run-settings"><label for="seed">Seed</label><input id="seed" inputmode="numeric" pattern="[0-9]*" maxlength="10" aria-label="Run seed"><button id="new-seeded">Start seed</button><button id="retry">Restart same seed</button><button id="new-random">New random run</button><p>Starting or restarting replaces this browser’s saved run.</p></div></details>
+      <details><summary>Run</summary><div class="run-settings"><label for="seed">Seed</label><input id="seed" inputmode="numeric" pattern="[0-9]*" maxlength="10" aria-label="Run seed"><button id="new-seeded">Start seed</button><button id="retry">Restart same seed</button><button id="new-random">New random run</button><p>Runs save automatically. This 7×7 version starts a separate save. Starting or restarting replaces this version's run.</p><p id="save-note" role="status"></p></div><details><summary>Recent actions</summary><div id="event-log" class="log"></div></details></details>
     </div>
   </main>`;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 function readSave(): SaveRecord | null {
   try {
-    const current = localStorage.getItem(SAVE_KEY);
-    return parseSaveRecord(current ?? localStorage.getItem(LEGACY_SAVE_KEY));
+    return parseSaveRecord(localStorage.getItem(SAVE_KEY));
   } catch { return null; }
 }
 const initialSave = readSave();
-let needsCurrentSave = true;
-try { needsCurrentSave = localStorage.getItem(SAVE_KEY) === null; } catch { /* Saving below reports unavailable storage. */ }
 let state = initialSave?.state ?? createGame();
 let knownToken = initialSave?.token ?? null;
 let selectedAbility: Ability | null = null;
@@ -143,8 +132,7 @@ function dispatch(command: Command) {
   if (command.type === 'beginAttack') board.animatePulse(origin);
 }
 function choose(ability: Ability) {
-  if (ability === 'focus') { dispatch({ type: 'act', ability }); return; }
-  if (!availableAbilities(state).includes(ability)) return;
+  if (!availableAbilities(state).includes(ability) || (COSTS[ability] ?? 0) > (state.phase === 'attack' ? state.charge : state.player.attunement)) return;
   if (selectedAbility === ability) clearSelection();
   else { selectedAbility = ability; target = null; cursor = { x: state.player.x, y: state.player.y }; feedback = ''; }
   render();
@@ -185,6 +173,7 @@ function renderInspection() {
   const player = p && eq(p, state.player);
   const wall = p && state.walls.some(w => eq(w, p));
   const label = enemy ? `${enemy.kind[0].toUpperCase()}${enemy.id} · ${enemy.kind[0].toUpperCase()}${enemy.kind.slice(1)}` : player ? 'Player' : wall ? 'Wall' : 'Empty';
+  document.querySelector<HTMLElement>('.inspection')!.hidden = !p;
   $('inspect-title').textContent = p ? `${coordinate(p)} · ${label}` : 'Inspect';
   $('inspect-vitals').innerHTML = enemy ? unitVitals(enemy) : player ? hpDots(state.player.hp, state.player.maxHp) : '';
   const details: string[] = [];
@@ -198,54 +187,48 @@ function renderInspection() {
   }
   $('inspect-info').textContent = p ? details.join(' ') : 'Hover a tile to inspect it. Tap or click to keep its details.';
   $('clear-inspect').hidden = !p;
-  $('board-note').textContent = state.phase === 'attack' && state.pulse ? `Pulse: ${state.pulse.hitIds.length} hit · ${state.pulse.breachedIds.length} breached. Shading shows its original shadow.` : showPulsePreview && canBeginAttack(state) ? 'Pulse preview: dark tiles are occluded. Small blue dots mark enemies it will hit.' : enemy?.intent ? 'White line: inspected enemy’s planned move. Crosses: its attack tiles.' : 'Crosses mark enemy attack tiles. Hover or tap a tile to inspect.';
+  $('board-note').textContent = state.phase === 'attack' && state.pulse ? `Pulse: ${state.pulse.hitIds.length} hit · ${state.pulse.breachedIds.length} breached.` : showPulsePreview && canBeginAttack(state) ? 'Pulse preview: dark tiles are occluded.' : enemy?.intent ? 'White line: planned move. Crosses: planned attacks.' : 'Hover or tap a tile to inspect.';
 }
 function render() {
   const attack = state.phase === 'attack';
-  const blockedStep = state.phase === 'normal' && state.slot === 0 && validTargets(state, 'quickstep').length === 0;
   $('run-label').textContent = `Arena ${state.room}/${TOTAL_ROOMS} · Turn ${state.round}`;
-  $('status').innerHTML = `<span class="player-health">HP ${hpDots(state.player.hp, state.player.maxHp)}</span><span>${attack ? 'Charge' : 'Attunement'} <strong>${attack ? state.charge : state.player.attunement}<small> / ${MAX_ATTUNEMENT}${attack ? '' : ` · ${THRESHOLD}+ to attack`}</small></strong></span><span>Enemies <strong>${state.enemies.filter(e => e.hp > 0).length}</strong></span>`;
-  const phaseTitles: Record<GameState['phase'], string> = { normal: `Action ${state.slot + 1} of 3`, resolve: 'Enemy resolution', attack: 'Attack turn', cleared: 'Arena cleared', won: 'Run complete', lost: 'Run ended' };
+  $('status').innerHTML = `<span class="player-health">HP ${hpDots(state.player.hp, state.player.maxHp)}</span><span>Charge <strong>${attack ? state.charge : state.player.attunement}<small> / ${MAX_ATTUNEMENT}</small></strong></span>`;
+  const phaseTitles: Record<GameState['phase'], string> = { normal: 'Choose one action', attack: 'Time frozen', cleared: 'Arena cleared', won: 'Run complete', lost: 'Run ended' };
   $('phase-title').textContent = phaseTitles[state.phase];
-  $('time-label').textContent = attack ? 'TIME FROZEN' : state.phase === 'normal' || state.phase === 'resolve' ? 'YOUR DECISION' : '';
-  $('time-label').classList.toggle('frozen', attack);
-  $('steps').hidden = !['normal', 'resolve', 'attack'].includes(state.phase);
-  Array.from($('steps').children).forEach((item, i) => { item.className = i < state.slot ? 'done' : i === state.slot ? 'current' : ''; item.setAttribute('aria-current', i === state.slot ? 'step' : 'false'); });
+  $('phase-title').classList.toggle('frozen', attack);
   const actions = availableAbilities(state);
   const abilities = $('abilities'); abilities.replaceChildren();
   for (const ability of actions) {
     const cost = COSTS[ability];
-    const b = button(`${names[ability]}${cost ? ` · ${cost}` : ability === 'focus' ? (state.player.attunement >= MAX_ATTUNEMENT ? ' · MAX' : ' · +1') : ''}`, () => choose(ability), selectedAbility === ability ? 'selected' : '', (ability === 'quickstep' && blockedStep) || (cost !== undefined && state.charge < cost));
+    const label = `${names[ability]}${cost ? ` · −${cost}` : ability === 'light' ? ' · +2 on hit' : ''}`;
+    const b = button(label, () => choose(ability), `skill-${ability}${selectedAbility === ability ? ' selected' : ''}`, (cost ?? 0) > (attack ? state.charge : state.player.attunement));
     b.setAttribute('aria-pressed', String(selectedAbility === ability));
     b.title = descriptions[ability];
     abilities.append(b);
   }
   let instruction = '';
   if (feedback) instruction = feedback;
-  else if (selectedAbility) instruction = target ? `${names[selectedAbility]} → ${coordinate(target)}. ${['strike', 'deflect', 'break'].includes(selectedAbility) ? 'Highlighted tiles form the arc. ' : ''}Confirm to commit.` : descriptions[selectedAbility] + ' Tap a target.';
-  else if (blockedStep) instruction = 'No adjacent tile is open. Skip this slot without gaining attunement.';
-  else if (state.phase === 'normal') instruction = 'Choose an action. Enemies wait until all three actions are complete.';
-  else if (state.phase === 'resolve') instruction = 'All three actions are complete. Resolve enemy intentions, or start an attack turn first.';
-  else if (attack) instruction = `${state.charge} charge available. Link actions; unused charge is lost when you end this attack turn.`;
+  else if (selectedAbility) instruction = target ? `${names[selectedAbility]} → ${coordinate(target)}.${selectedAbility === 'dashAttack' ? ' Gold tiles show the attack after landing.' : ''}` : descriptions[selectedAbility];
+  else if (state.phase === 'normal') instruction = 'One action, then enemies respond.';
+  else if (attack) instruction = state.charge ? 'Dash, then strike ahead. Enemies stay frozen.' : 'No charge left. Resume time.';
   else if (state.phase === 'cleared') instruction = 'All enemies are defeated. Continue to the next arena and recover 3 HP.';
   else if (state.phase === 'won') instruction = 'All five arenas cleared. Start a new run or retry the same seed below.';
   else instruction = 'You have no HP remaining. Restart the same seed or start a new run below.';
   $('instruction').textContent = instruction;
   $('target-controls').hidden = !selectedAbility;
   $('confirm').textContent = target && selectedAbility ? `Confirm ${names[selectedAbility]}` : 'Select a target';
+  $('confirm').className = `primary${selectedAbility ? ` skill-${selectedAbility}` : ''}`;
   ($('confirm') as HTMLButtonElement).disabled = !target;
   $('phase-controls').replaceChildren();
-  if (blockedStep) $('phase-controls').append(button('Skip blocked Quickstep', () => dispatch({ type: 'skipStep' }), 'wide'));
-  if (state.phase === 'resolve') $('phase-controls').append(button('Resolve enemies', () => dispatch({ type: 'resolve' }), 'primary wide'));
   if (state.phase === 'cleared') $('phase-controls').append(button('Next arena · +3 HP', () => dispatch({ type: 'nextRoom' }), 'primary wide'));
   if (state.phase === 'lost' || state.phase === 'won') $('phase-controls').append(button('Restart same seed', () => newRun(state.seed), 'primary wide'));
   $('attack-controls').replaceChildren();
-  if (attack) $('attack-controls').append(button(`End attack${state.charge ? ` · lose ${state.charge} charge` : ''}`, () => dispatch({ type: 'endAttack' }), 'wide'));
-  else if (state.phase === 'normal' || state.phase === 'resolve') $('attack-controls').append(button(canBeginAttack(state) ? `Attack turn · use ${state.player.attunement}` : `Attack turn · needs ${THRESHOLD} attunement`, () => dispatch({ type: 'beginAttack' }), 'attack-button wide', !canBeginAttack(state)));
+  if (attack) $('attack-controls').append(button(`Resume time${state.charge ? ` · discard ${state.charge}` : ''}`, () => dispatch({ type: 'endAttack' }), 'skill-freeze wide'));
+  else if (state.phase === 'normal') $('attack-controls').append(button(canBeginAttack(state) ? `Freeze time · use ${state.player.attunement}` : `Freeze time · needs ${THRESHOLD}`, () => dispatch({ type: 'beginAttack' }), 'skill-freeze wide', !canBeginAttack(state)));
   renderInspection();
-  const recent = state.log.slice(0, 2);
-  $('log1').textContent = recent[0] ?? '';
-  $('log2').textContent = recent[1] ?? '';
+  $('last-event').textContent = state.round > 1 && !attack ? state.log[0] ?? '' : '';
+  $('last-event').hidden = !$('last-event').textContent;
+  $('event-log').replaceChildren(...state.log.map(message => { const p = document.createElement('p'); p.textContent = message; return p; }));
   $('save-note').textContent = savedMessage;
   $('pulse-option').hidden = !canBeginAttack(state);
   $('enemy-list').replaceChildren(...state.enemies.filter(e => e.hp > 0).map(e => {
@@ -282,10 +265,9 @@ window.addEventListener('keydown', event => {
   if (event.repeat || (event.target instanceof HTMLElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName))) return;
   const key = event.key.toLowerCase();
   if (key === 'escape') { clearSelection(); render(); return; }
-  if (key === 'f' && availableAbilities(state).includes('focus')) { event.preventDefault(); choose('focus'); return; }
-  if (key === 'a' && canBeginAttack(state)) { event.preventDefault(); dispatch({ type: 'beginAttack' }); return; }
-  if (/^[1-4]$/.test(key) && !event.code.startsWith('Numpad')) {
-    const ability = availableAbilities(state).filter(a => a !== 'focus')[Number(key) - 1];
+  if ((key === 'f' || key === 'a') && canBeginAttack(state)) { event.preventDefault(); dispatch({ type: 'beginAttack' }); return; }
+  if (/^[1-3]$/.test(key) && !event.code.startsWith('Numpad')) {
+    const ability = availableAbilities(state)[Number(key) - 1];
     if (ability) { event.preventDefault(); choose(ability); }
     return;
   }
@@ -294,7 +276,7 @@ window.addEventListener('keydown', event => {
   const d = directions[event.code] ?? directions[key];
   if (d) {
     event.preventDefault();
-    const base = ['strike', 'deflect', 'break', 'core', 'core2', 'quickstep'].includes(selectedAbility) ? state.player : cursor ?? state.player;
+    const base = ['light', 'deflect'].includes(selectedAbility) ? state.player : cursor ?? state.player;
     cursor = { x: Math.max(0, Math.min(SIZE - 1, base.x + d.x)), y: Math.max(0, Math.min(SIZE - 1, base.y + d.y)) };
     target = validTargets(state, selectedAbility).some(p => eq(p, cursor!)) ? cursor : null;
     feedback = target ? '' : 'That tile is not a legal target.';
@@ -304,5 +286,5 @@ window.addEventListener('keydown', event => {
 // QA boundary: state is copied on read, and dispatch uses the same validated
 // commands as visible controls. This does not expose mutation of live state.
 Object.defineProperty(window, 'combatDebug', { value: Object.freeze({ getState: () => structuredClone(state), dispatch: (command: Command) => dispatch(command) }), writable: false });
-if (!initialSave || needsCurrentSave) save();
+if (!initialSave) save();
 render();

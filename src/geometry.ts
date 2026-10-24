@@ -7,8 +7,8 @@ export function directionTo(a: Point, b: Point): Direction {
   const angle = Math.atan2(b.x - a.x, a.y - b.y);
   return ((Math.round(angle / (Math.PI / 4)) + 8) % 8) as Direction;
 }
-export function arc(origin: Point, direction: Direction): Point[] {
-  return [-1, 0, 1].map(offset => DIRS[(direction + offset + 8) % 8]).map(d => ({ x: origin.x + d.x, y: origin.y + d.y })).filter(inside);
+export function arc(origin: Point, direction: Direction, width: 3 | 5 = 3): Point[] {
+  return (width === 5 ? [-2, -1, 0, 1, 2] : [-1, 0, 1]).map(offset => DIRS[(direction + offset + 8) % 8]).map(d => ({ x: origin.x + d.x, y: origin.y + d.y })).filter(inside);
 }
 export function clearPath(state: GameState, from: Point, to: Point, ignoreEnemyId?: number): boolean {
   if (!inside(from) || !inside(to) || same(from, to)) return false;

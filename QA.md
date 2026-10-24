@@ -1,5 +1,18 @@
 # Verification
 
+## Version 0.3 — 24 October 2026
+
+- 47 combat and save checks pass. Coverage includes one normal action followed by immediate enemy response, zero-cost Dash, Light center/side damage and charge-on-hit, normal versus Heavy parries, five-direction Deflect, charge limits, the radial entry pulse, all eight Dash Attack directions, no HP spill on breach, core removal/return, and zero-budget rejection.
+- Arena generation checks cover 48 seeds across all five arenas (240 layouts), with connected floors, valid 7×7 coordinates, and no overlapping occupants. The basic Lunge has 5 Guard and 1 HP.
+- Desktop Chrome: action colors, 7×7 target mapping, enemy hover details, and normal Dash selection/confirmation match the simulation; selecting and inspecting targets does not advance time.
+- WebKit iPad touch emulation: two Light attacks bank 4 charge while parrying, Deflect spends 1 and previews five tiles, Freeze transfers 3 charge and pulses, and only Dash Attack remains. Two directional dashes spend charge without advancing the round and land a core hit. Reload during Freeze preserves the complete state. Older save storage remains untouched.
+- Tablet portrait and landscape checks (834×1194, 1194×834, and 768×1024) keep a square board without horizontal overflow. Screenshots of Deflect and the forward-facing Dash Attack were visually inspected. No page errors were observed. Production typecheck/build pass.
+- A legal tactical simulation cleared the first two arenas on seed 731. Full five-arena balance is unverified. Retained 10-Guard regeneration means Light mainly builds charge; an isolated Heavy can make earning new charge costly because Light cannot parry it. No balance changes were made beyond the requested revision.
+
+The earlier checks below are historical and do not establish balance or complete-run success for the new one-action rules.
+
+## Version 0.2 baseline
+
 Version 0.2 verified on 11 October 2026.
 
 - Hover update: desktop Chrome checks cover enemies, player, walls, empty tiles, planned attacks, pin restoration on board exit/padding, and target confirmation after hover. Hover leaves combat state and saved state unchanged and does not rebuild action buttons. Screenshots were visually reviewed.

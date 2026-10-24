@@ -17,7 +17,8 @@ export interface BoardFrame {
 const CELL = 58;
 const PAD = 24;
 const EDGE = CELL * SIZE + PAD * 2;
-const C = { bg: 0x101419, tile: 0x1d232a, grid: 0x343c47, text: '#f2f5f7', muted: '#adb7c5', wall: 0x4b535d, player: 0x8ed9ff, danger: 0xef827e, heavy: 0xffad6c, opening: 0xff4ed8, breach: 0xffd975, valid: 0x8ed9ff, hp: 0xf16c73, hpEmpty: 0x75343c };
+const C = { bg: 0x101419, tile: 0x1d232a, grid: 0x343c47, text: '#f2f5f7', muted: '#adb7c5', wall: 0x4b535d, player: 0x8ed9ff, danger: 0xef827e, heavy: 0xffad6c, opening: 0xff4ed8, breach: 0xffd975, freeze: 0xc79cab, hp: 0xf16c73, hpEmpty: 0x75343c };
+const ACTION_COLORS: Record<string, number> = { dash: 0x91ad94, light: 0xc5baa0, deflect: 0x91b4cb, dashAttack: 0xd0b166 };
 const eq = (a: Point, b: Point) => a.x === b.x && a.y === b.y;
 const coord = (p: Point) => ({ x: PAD + p.x * CELL + CELL / 2, y: PAD + p.y * CELL + CELL / 2 });
 
@@ -60,6 +61,7 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
     redraw() {
       const f = getFrame();
       const s = f.state;
+      const actionColor = f.ability ? ACTION_COLORS[f.ability] : 0xdce3eb;
       this.layer.clear();
       this.texts.forEach(t => t.destroy());
       this.texts = [];
@@ -71,7 +73,7 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
       }
       const pulse = f.pulsePreview ?? (s.phase === 'attack' ? s.pulse : null);
       if (pulse) {
-        for (const p of pulse.visibleTiles) this.tile(p, C.player, 0.035);
+        for (const p of pulse.visibleTiles) this.tile(p, C.freeze, 0.065);
         for (const p of pulse.shadowTiles) this.tile(p, 0x000000, 0.4);
       }
       const active = s.enemies.filter(e => !e.removed && e.hp > 0);
@@ -92,19 +94,37 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
         this.layer.lineStyle(1, 0x79818a, 0.45).lineBetween(c.x - 13, c.y - 13, c.x + 13, c.y + 13).lineBetween(c.x + 13, c.y - 13, c.x - 13, c.y + 13);
       }
       for (const d of s.defenses) {
-        const offsets = d.kind === 'deflect' ? [-1, 0, 1] : [0];
+        const offsets = d.kind === 'deflect' ? [-2, -1, 0, 1, 2] : [0];
         for (const offset of offsets) {
           const direction = DIRS[(d.direction + offset + 8) % 8];
           const p = { x: s.player.x + direction.x, y: s.player.y + direction.y };
           if (p.x < 0 || p.x >= SIZE || p.y < 0 || p.y >= SIZE) continue;
-          this.outline(p, d.kind === 'deflect' ? 0xbab8ff : 0x8ed9ff, 2, 7);
+          this.outline(p, d.kind === 'deflect' ? ACTION_COLORS.deflect : ACTION_COLORS.light, 2, 7);
         }
       }
       for (const p of f.valid) {
         const c = coord(p);
-        this.layer.fillStyle(C.valid, 0.8).fillCircle(c.x, c.y, 3);
+        this.layer.fillStyle(actionColor, 0.9).fillCircle(c.x, c.y, 3);
       }
-      for (const p of f.preview) this.tile(p, C.valid, 0.18, 2);
+      for (const p of f.preview) {
+        this.tile(p, actionColor, 0.22, 2);
+        this.outline(p, actionColor, 1, 3);
+      }
+      if (f.ability === 'dashAttack' && f.target) {
+        const a = coord(s.player);
+        const b = coord(f.target);
+        const length = Math.hypot(b.x - a.x, b.y - a.y);
+        if (length > 0) {
+          const ux = (b.x - a.x) / length;
+          const uy = (b.y - a.y) / length;
+          this.layer.lineStyle(2, actionColor, 0.65).lineBetween(a.x, a.y, b.x, b.y);
+          this.layer.lineStyle(2, actionColor, 1).strokeCircle(b.x, b.y, 5);
+          const tip = { x: b.x + ux * 15, y: b.y + uy * 15 };
+          this.layer.lineBetween(b.x, b.y, tip.x, tip.y)
+            .lineBetween(tip.x, tip.y, tip.x - ux * 6 + uy * 4, tip.y - uy * 6 - ux * 4)
+            .lineBetween(tip.x, tip.y, tip.x - ux * 6 - uy * 4, tip.y - uy * 6 + ux * 4);
+        }
+      }
       if (inspected?.intent) {
         const a = coord(inspected);
         const b = coord(inspected.intent.destination);
@@ -126,7 +146,7 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
       for (const p of f.valid) {
         if (active.some(e => eq(e, p)) || s.walls.some(w => eq(w, p))) {
           const c = coord(p);
-          this.layer.fillStyle(C.valid, 1).fillCircle(c.x - 24, c.y - 24, 3);
+          this.layer.fillStyle(actionColor, 1).fillCircle(c.x - 24, c.y - 24, 3);
         }
       }
       if (f.inspectId !== null) {
@@ -134,11 +154,11 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
         if (e) this.outline(e, 0xffffff, 1.5, 2);
       }
       if (f.inspectTile) this.outline(f.inspectTile, 0xffffff, 1, 6);
-      if (f.cursor && !f.target) this.outline(f.cursor, 0xdce3eb, 1, 3);
+      if (f.cursor && !f.target) this.outline(f.cursor, actionColor, 1, 3);
       if (f.target) {
-        this.outline(f.target, C.valid, 3, 3);
+        this.outline(f.target, actionColor, 3, 3);
         const c = coord(f.target);
-        this.layer.lineStyle(2, C.valid, 1).lineBetween(c.x - 8, c.y - 24, c.x + 8, c.y - 24);
+        this.layer.lineStyle(2, actionColor, 1).lineBetween(c.x - 8, c.y - 24, c.x + 8, c.y - 24);
       }
     }
     enemy(e: Enemy, _s: GameState, pulse: PulseResult | null) {
@@ -156,7 +176,7 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
       this.text(c.x, c.y + 3, guardLabel, Math.min(12, 64 / guardLabel.length), color);
       // Life sits immediately below the Guard bar, aligned to its right edge.
       for (let n = 0; n < e.maxHp; n++) this.hpDot(c.x + 17.5 - (e.maxHp - 1 - n) * 7, c.y + 16, 2.5, n < e.hp);
-      if (!e.removed && pulse?.hitIds.includes(e.id)) this.layer.fillStyle(C.player, 1).fillCircle(c.x + 25, c.y - 25, 2.5);
+      if (!e.removed && pulse?.hitIds.includes(e.id)) this.layer.fillStyle(C.freeze, 1).fillCircle(c.x + 25, c.y - 25, 2.5);
     }
     animatePulse(origin: Point) {
       this.pulseEffect?.destroy();
@@ -166,7 +186,7 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
       this.pulseEffect = effect;
       const animation = { radius: 0, alpha: 0.8 };
       this.tweens.add({ targets: animation, radius: EDGE * 1.25, alpha: 0, duration: 700, ease: 'Sine.Out', onUpdate: () => {
-        effect.clear().lineStyle(4, C.player, animation.alpha).strokeCircle(c.x, c.y, animation.radius);
+        effect.clear().lineStyle(4, C.freeze, animation.alpha).strokeCircle(c.x, c.y, animation.radius);
       }, onComplete: () => { effect.destroy(); if (this.pulseEffect === effect) this.pulseEffect = null; } });
     }
   }
