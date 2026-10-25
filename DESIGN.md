@@ -1,4 +1,4 @@
-# Combat prototype rules, version 0.5
+# Combat prototype rules, version 0.5.1
 
 A fresh, placeholder-only combat prototype with a minimal interface. This version uses a 7 × 7 arena and one normal action per turn.
 
@@ -12,7 +12,7 @@ At a normal decision point with at least 3 banked charge, the player may enter F
 
 ## Grid and movement
 
-The playfield is 7 × 7, with eight neighboring directions. Dash follows a clear queen line: any horizontal, vertical, or 45-degree diagonal distance to an empty tile. Walls and active enemies block the path and destination. Diagonal movement cannot cut a blocked corner. Dash Attack uses the same movement restrictions and must actually move.
+The playfield is 7 × 7, with eight neighboring directions. Dash follows a clear queen line: any horizontal, vertical, or 45-degree diagonal distance to an empty tile. Only walls and active enemies on the crossed tiles or destination block a dash. Off-path neighboring tiles do not block diagonals, even when occupied. For example, E7 → A3 crosses D6, C5, B4, and A3; an enemy at D7 does not block it. Dash Attack uses the same movement restrictions and must actually move.
 
 An attack arc consists of consecutive neighboring tiles around its origin. Light Attack covers three neighbors; Deflect protects five neighboring directions. Select the middle adjacent direction to orient either. Walls are excluded from damage previews. Dash Attack’s three-tile arc originates at its landing tile and faces the actual movement direction, with no separate aiming step.
 
@@ -65,7 +65,7 @@ Removed enemies do not block movement. A surviving enemy returns when Freeze end
 
 Enemy gap closers move along rows, columns, or diagonals. Ground dashes need a clear path; jumps can cross walls, units, and the player, but must land on an empty non-wall tile. Every moving attack faces its direction of travel, with a forward footprint from its landing tile. It cannot turn back or aim independently after moving. Adjacent enemies can also attack from their current tile. Attack footprints respect walls.
 
-At planning time, an enemy only commits an attack if the footprint can reach the player’s current tile. Otherwise it approaches without attacking, following a shortest legal route to a firing position when a detour is needed, or waits if it cannot advance. Earlier reserved landing tiles also block later ground paths and diagonal corners, so allies do not invalidate advertised movements. The move and attack resolve as one committed action. The destination and attack tiles stay fixed after the player acts: dodging can make the attack miss. Occupying its landing tile cancels the move and attack; blocking a ground path also cancels it, while a jump can clear the new obstruction.
+At planning time, an enemy only commits an attack if the footprint can reach the player’s current tile. Otherwise it approaches without attacking, following a shortest legal route to a firing position when a detour is needed, or waits if it cannot advance. Earlier reserved landing tiles also block later ground paths when they lie on the crossed tiles, so allies do not invalidate advertised movements. Off-path landings do not block diagonals. The move and attack resolve as one committed action. The destination and attack tiles stay fixed after the player acts: dodging can make the attack miss. Occupying its landing tile cancels the move and attack; blocking a ground path also cancels it, while a jump can clear the new obstruction.
 
 Guard protects all HP. Breaching cancels the current intention and stuns the enemy through the next enemy response. At the end of that response, its Guard restores. Unbreached enemies regenerate **10 Guard per normal enemy response**, up to their maximum. Breaching itself never removes HP.
 

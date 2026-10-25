@@ -38,7 +38,7 @@ test('seven-square grid exposes eight directions and clipped three- or five-neig
   assert(!inside(p(-1, 0)) && !inside(p(7, 0)) && !inside(p(0.5, 1)));
 });
 
-test('queen movement checks endpoints, complete paths, and both blocked diagonal corners', () => {
+test('queen movement checks endpoints and traversed tiles while allowing off-path diagonal flanks', () => {
   const s = fixture();
   assert(clearPath(s, s.player, p(3, 0)));
   assert(clearPath(s, s.player, p(6, 6)));
@@ -49,13 +49,113 @@ test('queen movement checks endpoints, complete paths, and both blocked diagonal
     s.walls = [wall]; assert(!clearPath(s, s.player, p(3, 0)));
   }
   for (const wall of [p(4, 3), p(3, 4)]) {
-    s.walls = [wall]; assert(!clearPath(s, s.player, p(4, 4)));
+    s.walls = [wall]; assert(clearPath(s, s.player, p(4, 4)));
   }
   s.walls = []; s.enemies = [enemy(1, 3, 1)];
   assert(!clearPath(s, s.player, p(3, 1)));
   assert(!clearPath(s, s.player, p(3, 0)));
   get(s, 1).removed = true; assert(clearPath(s, s.player, p(3, 0)));
   get(s, 1).removed = false; get(s, 1).hp = 0; assert(clearPath(s, s.player, p(3, 0)));
+});
+
+test('the reported E7 to A3 diagonal Dash passes beside the enemy on D7', () => {
+  const s = fixture({
+    walls: [p(3, 1), p(5, 1), p(5, 2)],
+    enemies: [
+      enemy(1, 3, 6, { kind: 'lunge', hp: 1, maxHp: 1, guard: 5, maxGuard: 5 }),
+      enemy(2, 4, 4, { kind: 'sweep', hp: 2, maxHp: 2, guard: 15, maxGuard: 15 }),
+      enemy(3, 4, 2, { kind: 'heavy' }),
+    ],
+  });
+  s.player.x = 4; s.player.y = 6;
+  planEnemies(s);
+  const destination = p(0, 2);
+  assert(clearPath(s, s.player, destination));
+  assert(validTargets(s, 'dash').some(point => same(point, destination)));
+  const moved = act(s, 'dash', destination);
+  assert.notEqual(moved, s);
+  assert(same(moved.player, destination));
+  assert.equal(moved.player.hp, 3);
+  assert.equal(moved.round, s.round + 1);
+
+  const frozen = { ...structuredClone(s), phase: 'attack' as const, charge: 2 };
+  assert(validTargets(frozen, 'dashAttack').some(point => same(point, destination)));
+  const attacked = act(frozen, 'dashAttack', destination);
+  assert(same(attacked.player, destination));
+  assert.equal(attacked.charge, 1);
+  assert.equal(attacked.player.hp, 3);
+  assert.equal(attacked.round, frozen.round);
+  assert.deepEqual(attacked.enemies, frozen.enemies);
+});
+
+test('rotated and reflected diagonals ignore flank walls and units but reject every on-path blocker', () => {
+  for (const reflected of [false, true]) for (let turns = 0; turns < 4; turns++) {
+    const transform = (point: Point): Point => {
+      let result = reflected ? p(SIZE - 1 - point.x, point.y) : { ...point };
+      for (let turn = 0; turn < turns; turn++) result = p(SIZE - 1 - result.y, result.x);
+      return result;
+    };
+    const origin = transform(p(3, 3));
+    const destination = transform(p(6, 6));
+    const s = fixture({
+      walls: [p(4, 3), p(5, 4), p(6, 5)].map(transform),
+      enemies: [p(3, 4), p(4, 5), p(5, 6)].map(transform).map((point, i) => enemy(i + 1, point.x, point.y)),
+    });
+    s.player.x = origin.x; s.player.y = origin.y;
+    for (const ability of ['dash', 'dashAttack'] as const) {
+      const state = ability === 'dash' ? s : { ...structuredClone(s), phase: 'attack' as const, charge: 2 };
+      assert(clearPath(state, origin, destination));
+      assert(validTargets(state, ability).some(point => same(point, destination)));
+      assert(same(act(state, ability, destination).player, destination));
+      for (const step of [1, 2, 3]) for (const blocker of ['wall', 'enemy']) {
+        const blocked = structuredClone(state);
+        const point = transform(p(3 + step, 3 + step));
+        if (blocker === 'wall') blocked.walls.push(point);
+        else blocked.enemies.push(enemy(99, point.x, point.y));
+        assert(!clearPath(blocked, origin, destination));
+        assert(!validTargets(blocked, ability).some(target => same(target, destination)));
+        assert.equal(act(blocked, ability, destination), blocked);
+      }
+    }
+  }
+});
+
+test('enemy ground dashes use the same queen-line rule for flank walls and units', () => {
+  for (const flank of ['wall', 'enemy']) {
+    const s = fixture({ enemies: [enemy(1, 1, 1, { kind: 'lunge' })] });
+    s.player.x = 4; s.player.y = 4;
+    if (flank === 'wall') s.walls.push(p(2, 1));
+    else s.enemies.push(enemy(2, 2, 1));
+    planEnemies(s, new Set([1]));
+    assert.equal(get(s, 1).intent!.movement, 'dash');
+    assert(same(get(s, 1).intent!.destination, p(3, 3)));
+    const resolved = act(s, 'light', p(4, 5));
+    assert(same(get(resolved, 1), p(3, 3)), flank);
+    assert.equal(resolved.player.hp, 2);
+  }
+});
+
+test('reserved landings block a later ground dash only when they lie on its actual path', () => {
+  for (const landing of [p(2, 1), p(2, 2)]) {
+    const jumper = enemy(2, 0, landing.y, { kind: 'heavy' });
+    jumper.intent = { destination: landing, tiles: [], heavy: true, label: 'Jump approach', movement: 'jump', kind: 'move', direction: 2 };
+    const s = fixture({ enemies: [jumper, enemy(1, 1, 1, { kind: 'lunge' })] });
+    s.player.x = 4; s.player.y = 4;
+    planEnemies(s, new Set([1]));
+    const planned = structuredClone(get(s, 1).intent);
+    if (landing.y === 1) {
+      assert(planned && same(planned.destination, p(3, 3)), 'off-path landing must not block the diagonal');
+    } else {
+      assert(!planned || !same(planned.destination, p(3, 3)), 'reserved crossed tile must block the diagonal');
+      if (planned?.movement === 'dash') {
+        const step = DIRS[planned.direction];
+        for (let i = 1; i <= distance(get(s, 1), planned.destination); i++) assert(!same(p(1 + step.x * i, 1 + step.y * i), landing));
+      }
+    }
+    const resolved = act(s, 'light', p(4, 5));
+    assert(same(get(resolved, 2), landing));
+    assert(same(get(resolved, 1), planned?.destination ?? p(1, 1)));
+  }
 });
 
 test('normal and frozen abilities are distinct and unaffordable abilities have no targets', () => {

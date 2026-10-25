@@ -1,6 +1,6 @@
 # Grid combat prototype
 
-Version 0.5 is a minimal, touch-friendly combat prototype on a **7 × 7 grid**. It uses placeholder units, a TypeScript simulation, a Phaser board, and plain HTML controls. There is no setting or flavor.
+Version 0.5.1 is a minimal, touch-friendly combat prototype on a **7 × 7 grid**. It uses placeholder units, a TypeScript simulation, a Phaser board, and plain HTML controls. There is no setting or flavor.
 
 ## Play
 
@@ -26,7 +26,7 @@ Action colors match their targeting previews: muted green for Dash, light beige 
 
 Straight dashed arrows show ground dashes; curved dashed arrows show jumps. Both connect each enemy to its planned landing tile. Solid arrows continue forward into its attack tiles. Matching enemy IDs identify the source, including when attacks overlap; ! marks Heavy attacks. Hover or tap an enemy or threatened tile to emphasize related plans. Plans are hidden during Freeze so the Dash Attack preview stays clear.
 
-Lunge and Sweep dash along clear ground paths. Heavy jumps over obstacles and units. Moving attacks always face the direction of travel. Enemies only plan an attack that reaches your current tile; otherwise they reposition without attacking. Their shown plans stay fixed, so moving out of the footprint makes them miss.
+Dashes check only the tiles they cross: neighboring enemies or walls do not block an open diagonal. Lunge and Sweep use the same ground-path rule. Heavy jumps over obstacles and units. Moving attacks always face the direction of travel. Enemies only plan an attack that reaches your current tile; otherwise they reposition without attacking. Their shown plans stay fixed, so moving out of the footprint makes them miss.
 
 Hover or tap a tile to inspect its contents, enemy arrivals, and planned attacks. Hovering never changes your action target or advances time. Controls, detailed rules, and display options are collapsed under **Controls & rules**; seed and restart options are under **Run**.
 

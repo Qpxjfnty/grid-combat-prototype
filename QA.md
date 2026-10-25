@@ -1,5 +1,13 @@
 # Verification
 
+## Version 0.5.1 — 24 October 2026
+
+- All 70 combat/save checks and the production typecheck/build pass.
+- Recreated the reported board with the player at E7, enemies at D7/E5/E3, and walls at D2/F2/F3. Before the correction, every destination along E7 → A3 was unavailable. Afterward D6, C5, B4, and A3 are all legal.
+- WebKit iPad touch emulation confirms selecting A3 does not advance time, confirming Dash lands on A3 with all 3 HP, and reloading preserves the result. The same diagonal Dash Attack costs 1 frozen charge without advancing the round. The selected diagonal and confirmation were visually inspected at 1194×834; no horizontal overflow occurred.
+- Regression coverage checks rotated/reflected diagonals, off-path wall/unit flanks, walls/units on every crossed tile and destination, and enemy ground dashes around reserved landings. Off-path reservations are allowed; reservations on the path still block movement. Attack and pulse wall-occlusion rules are unchanged.
+- Save schema remains version 5: the correction relaxes movement restrictions, so existing intentions remain valid and no run migration is needed.
+
 ## Version 0.5 — 24 October 2026
 
 - 66 combat and save checks pass. New coverage includes attack reach at planning time, movement-facing footprints, approach-only turns, stationary attacks, jump traversal over walls/units/player, blocked landings, fixed dodges, wall-respecting footprints, and frozen-time preservation. Planning invariants cover 64 seeds at six candidate player locations, skipping occupied tiles.

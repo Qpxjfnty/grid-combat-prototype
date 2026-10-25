@@ -241,11 +241,9 @@ function queenLine(from: Point, to: Point): boolean {
 function groundRouteClear(state: GameState, from: Point, to: Point, enemyId: number, reserved: ReadonlySet<string>): boolean {
   if (!clearPath(state, from, to, enemyId) || crossesPlayer(state, from, to)) return false;
   const sx = Math.sign(to.x - from.x), sy = Math.sign(to.y - from.y);
-  let previous = from;
   for (let step = 1; step <= distance(from, to); step++) {
     const point = { x: from.x + sx * step, y: from.y + sy * step };
-    if (reserved.has(`${point.x},${point.y}`) || (sx && sy && (reserved.has(`${previous.x + sx},${previous.y}`) || reserved.has(`${previous.x},${previous.y + sy}`)))) return false;
-    previous = point;
+    if (reserved.has(`${point.x},${point.y}`)) return false;
   }
   return true;
 }

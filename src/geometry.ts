@@ -19,7 +19,8 @@ export function clearPath(state: GameState, from: Point, to: Point, ignoreEnemyI
   let p = { ...from };
   for (let i = 0; i < Math.max(Math.abs(dx), Math.abs(dy)); i++) {
     const q = { x: p.x + sx, y: p.y + sy };
-    if (blocked(q) || (sx !== 0 && sy !== 0 && (blocked({ x: p.x + sx, y: p.y }) || blocked({ x: p.x, y: p.y + sy })))) return false;
+    // A queen-line move traverses these tiles only; neighboring flank squares are not on its path.
+    if (blocked(q)) return false;
     p = q;
   }
   return true;
