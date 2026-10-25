@@ -1,4 +1,4 @@
-# Combat prototype rules, version 0.5.1
+# Combat prototype rules, version 0.5.2
 
 A fresh, placeholder-only combat prototype with a minimal interface. This version uses a 7 × 7 arena and one normal action per turn.
 
@@ -73,7 +73,7 @@ Openings follow enemy cycles and appear in bright pink. Breached enemies appear 
 
 ## Run and interface
 
-A run spans five seeded arenas. The player starts with a maximum of 3 HP. Every unblocked enemy attack deals exactly 1 HP, including Heavy attacks. Multiple enemies can each hit during one response; damage is per attacker, not per marked tile. Clearing an arena allows advancement and restores HP to 3. Later arenas increase the enemy count from three to five. Layout generation preserves connected open space and room around the starting tile. Zero HP ends the run. There are no progression upgrades in this combat slice.
+A run spans five seeded arenas. The player starts on D4, the middle tile, in every arena, including new runs and restarts. Its eight adjacent tiles start clear of walls and enemies; walls can occupy the next ring, and enemies start at least three tiles away. The player starts with a maximum of 3 HP. Every unblocked enemy attack deals exactly 1 HP, including Heavy attacks. Multiple enemies can each hit during one response; damage is per attacker, not per marked tile. Clearing an arena allows advancement and restores HP to 3. Later arenas increase the enemy count from three to five. Layout generation preserves connected open space and room around the starting tile. Zero HP ends the run. There are no progression upgrades in this combat slice.
 
 The persistent interface contains the board, player HP and charge, available actions, and contextual targeting or inspection. Touch input uses action → target → confirm. Hover and tap inspection expose enemy Guard, HP, openings, destinations, and attack tiles without spending a turn. Detailed controls, rules, and display options are collapsed under Controls & rules; seed and restart controls are under Run.
 

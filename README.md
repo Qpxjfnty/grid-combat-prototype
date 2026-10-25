@@ -1,10 +1,10 @@
 # Grid combat prototype
 
-Version 0.5.1 is a minimal, touch-friendly combat prototype on a **7 × 7 grid**. It uses placeholder units, a TypeScript simulation, a Phaser board, and plain HTML controls. There is no setting or flavor.
+Version 0.5.2 is a minimal, touch-friendly combat prototype on a **7 × 7 grid**. It uses placeholder units, a TypeScript simulation, a Phaser board, and plain HTML controls. There is no setting or flavor.
 
 ## Play
 
-[Open the game](https://qpxjfnty.github.io/grid-combat-prototype/) in a browser, including Safari on iPad. Select an action, tap a highlighted tile, then confirm. Each normal action is followed immediately by the enemies’ response.
+[Open the game](https://qpxjfnty.github.io/grid-combat-prototype/) in a browser, including Safari on iPad. Select an action, tap a highlighted tile, then confirm. Each normal action is followed immediately by the enemies’ response. Every arena starts you on **D4**, the middle tile, with its eight neighboring tiles clear.
 
 | Normal action | Effect | Charge |
 | --- | --- | --- |

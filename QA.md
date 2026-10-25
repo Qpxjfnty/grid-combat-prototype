@@ -1,5 +1,10 @@
 # Verification
 
+## Version 0.5.2 — 24 October 2026
+
+- All 70 combat/save checks and the production typecheck/build pass. The existing generation suite verifies D4 starts across 48 seeds × 5 arenas, with all eight adjacent tiles clear, 3–5 walls retained, connected floors, and no overlapping occupants.
+- WebKit iPad touch emulation verifies Restart same seed starts at D4 and Next arena returns a player from A1 to D4 with restored HP. The center-start board was visually inspected. Reloading an existing run preserves its current position and complete state. No horizontal overflow occurred.
+
 ## Version 0.5.1 — 24 October 2026
 
 - All 70 combat/save checks and the production typecheck/build pass.

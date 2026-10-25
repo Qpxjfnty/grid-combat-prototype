@@ -54,7 +54,7 @@ function connected(walls: Point[]): boolean {
 
 function populateRoom(state: GameState): void {
   state.player.x = Math.floor(SIZE / 2);
-  state.player.y = SIZE - 2;
+  state.player.y = Math.floor(SIZE / 2);
   state.walls = [];
   state.enemies = [];
   state.round = 1;
@@ -62,7 +62,7 @@ function populateRoom(state: GameState): void {
   state.defenses = [];
   state.pulse = null;
   state.charge = 0;
-  const candidates = shuffle(state, allTiles().filter(point => point.x > 0 && point.x < SIZE - 1 && point.y > 0 && point.y < SIZE - 1 && distance(point, state.player) > 2));
+  const candidates = shuffle(state, allTiles().filter(point => point.x > 0 && point.x < SIZE - 1 && point.y > 0 && point.y < SIZE - 1 && distance(point, state.player) > 1));
   const desiredWalls = 3 + Math.floor((state.room - 1) / 2);
   for (const candidate of candidates) {
     if (state.walls.length >= desiredWalls) break;
@@ -105,7 +105,7 @@ export function createGame(seed: number = Date.now()): GameState {
     room: 1,
     round: 1,
     phase: 'normal',
-    player: { x: Math.floor(SIZE / 2), y: SIZE - 2, hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP, attunement: 0 },
+    player: { x: Math.floor(SIZE / 2), y: Math.floor(SIZE / 2), hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP, attunement: 0 },
     charge: 0,
     walls: [],
     enemies: [],

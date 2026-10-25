@@ -722,6 +722,8 @@ function checkLayout(s: GameState) {
   assert(inside(s.player));
   const walls = new Set(points(s.walls)); assert.equal(walls.size, s.walls.length);
   assert(!walls.has(`${s.player.x},${s.player.y}`));
+  assert(!s.walls.some(wall => distance(wall, s.player) <= 1), `blocked start space in seed ${s.seed}`);
+  assert(!s.enemies.some(e => distance(e, s.player) <= 1), `enemy in start space in seed ${s.seed}`);
   const occupied = new Set([`${s.player.x},${s.player.y}`]);
   for (const e of s.enemies.filter(e => e.hp > 0 && !e.removed)) {
     assert(inside(e)); const key = `${e.x},${e.y}`;
@@ -741,7 +743,7 @@ test('all five arenas remain deterministic, connected, and collision-free in the
   for (let seed = 1; seed <= 48; seed++) {
     let s = createGame(seed); assert.deepEqual(s, createGame(seed)); assert.equal(s.version, 5);
     for (let room = 1; room <= TOTAL_ROOMS; room++) {
-      checkLayout(s); assert(same(s.player, p(3, 5))); assert(s.walls.length >= 3 && s.walls.length <= 5);
+      checkLayout(s); assert(same(s.player, p(3, 3))); assert(s.walls.length >= 3 && s.walls.length <= 5);
       assert.equal(s.enemies.length, 3 + Math.floor((room - 1) / 2));
       if (room < TOTAL_ROOMS) s = execute({ ...s, phase: 'cleared', enemies: [] }, { type: 'nextRoom' });
     }
