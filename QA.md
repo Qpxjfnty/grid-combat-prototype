@@ -1,5 +1,14 @@
 # Verification
 
+## Version 0.5 — 24 October 2026
+
+- 66 combat and save checks pass. New coverage includes attack reach at planning time, movement-facing footprints, approach-only turns, stationary attacks, jump traversal over walls/units/player, blocked landings, fixed dodges, wall-respecting footprints, and frozen-time preservation. Planning invariants cover 64 seeds at six candidate player locations, skipping occupied tiles.
+- A vertical-wall fixture verifies a ground enemy takes a lateral detour and reaches an attack position. A reproduced seed-8 collision is fixed: earlier planned landings cannot silently block later advertised ground dashes or their diagonal corners. Seven seeds across all five arenas verify planned movements resolve when the player stays still and misses with Light.
+- WebKit iPad touch emulation confirms a Heavy jump clears a wall and lands on its advertised tile; Deflect blocks it and the two simultaneous ground attacks. A separate Dash outside the marked footprint avoids all three attacks without retargeting. Move-only inspections explicitly say there is no attack. Tapping to inspect preserves the complete state.
+- Desktop Chrome confirms hover inspection is free and keyboard Deflect resolves the advertised jump. Source colors, straight ground arrows, curved jump arrows, landing labels, attack branches, Guard bars, and HP dots were visually inspected in isolated and five-enemy fixtures. Sampled jump curves and arrowheads stay inside the grid for all 2,352 distinct ordered tile pairs.
+- Tablet layouts at 768×1024, 834×1194, and 1194×834 preserve a square board without horizontal overflow. Frozen version-4 browser saves migrate immediately to version 5 without changing HP, round, budget, pulse, or canceled intentions; reload preserves the new state and older-tab storage writes cannot overwrite it. Unit checks also cover version-3 migration and malformed movement metadata.
+- Production typecheck/build pass. These checks establish the requested movement and attack behavior; full-run balance under the new enemy rules remains unverified. Physical iPad testing has not been performed.
+
 ## Version 0.4 — 24 October 2026
 
 - 52 combat and save checks pass, including 3 starting/max HP, exactly 1 damage per unblocked enemy attack, three-hit defeat, Heavy bypassing Light parries, Deflect protection, healing capped at 3, and validated version 3 save migration.

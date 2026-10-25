@@ -2,7 +2,7 @@ export interface Point { x: number; y: number }
 export type Direction = 0|1|2|3|4|5|6|7;
 export type Ability = 'dash'|'light'|'deflect'|'dashAttack';
 export type EnemyKind = 'lunge'|'sweep'|'heavy';
-export interface Intent { destination: Point; tiles: Point[]; heavy: boolean; label: string; }
+export interface Intent { destination: Point; tiles: Point[]; heavy: boolean; label: string; movement: 'none'|'dash'|'jump'; kind: 'attack'|'move'; direction: Direction; }
 export interface Enemy extends Point { id: number; kind: EnemyKind; hp: number; maxHp: number; guard: number; maxGuard: number; breached: boolean; stun: number; removed: boolean; opening: boolean; cycle: number; intent: Intent | null; }
 export interface Defense { kind: 'light'|'deflect'; direction: Direction; }
 export interface PulseResult { hitIds: number[]; breachedIds: number[]; visibleTiles: Point[]; shadowTiles: Point[]; }
@@ -15,7 +15,7 @@ export interface GameState {
 }
 export type Command = { type: 'act'; ability: Ability; target?: Point } | { type: 'beginAttack' } | { type: 'endAttack' } | { type: 'nextRoom' };
 export const SIZE = 7;
-export const STATE_VERSION = 4;
+export const STATE_VERSION = 5;
 export const PLAYER_MAX_HP = 3;
 export const ENEMY_DAMAGE = 1;
 export const THRESHOLD = 3;

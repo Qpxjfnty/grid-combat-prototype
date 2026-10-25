@@ -20,7 +20,7 @@ const points = (values: Point[]) => values.map(({ x, y }) => `${x},${y}`).sort()
 const get = (s: GameState, id: number) => s.enemies.find(e => e.id === id)!;
 const incoming = (id: number, origin: Point, heavy = false): Enemy => enemy(id, origin.x, origin.y, {
   kind: heavy ? 'heavy' : 'sweep', guard: 20, maxGuard: 50,
-  intent: { destination: origin, tiles: [p(3, 3)], heavy, label: 'test' },
+  intent: { destination: origin, tiles: [p(3, 3)], heavy, label: 'test', movement: 'none', kind: 'attack', direction: directionTo(origin, p(3, 3)) },
 });
 const bank = (s: GameState, value: number) => { s.player.attunement = value; return s; };
 
@@ -72,12 +72,15 @@ test('normal and frozen abilities are distinct and unaffordable abilities have n
 
 test('normal Dash costs and generates no charge and immediately resolves enemy intentions', () => {
   const e = incoming(1, p(3, 0));
+  e.kind = 'lunge';
   e.intent!.destination = p(3, 1);
-  e.intent!.tiles = [p(4, 3)];
+  e.intent!.movement = 'dash';
+  e.intent!.direction = 4;
+  e.intent!.tiles = [p(3, 2), p(3, 3)];
   const s = bank(fixture({ enemies: [e] }), 4);
   const before = structuredClone(s);
-  const moved = act(s, 'dash', p(4, 3));
-  assert(same(moved.player, p(4, 3)));
+  const moved = act(s, 'dash', p(3, 2));
+  assert(same(moved.player, p(3, 2)));
   assert(same(get(moved, 1), p(3, 1)));
   assert.equal(moved.round, 2);
   assert.equal(moved.phase, 'normal');
@@ -169,10 +172,13 @@ test('three unblocked incoming attacks are fatal and further hits never make HP 
 });
 
 test('Light parry direction uses an attacker location after its gap closer', () => {
-  const e = incoming(1, p(3, 0));
-  e.intent!.destination = p(6, 3);
-  const hit = act(fixture({ enemies: [e] }), 'light', p(4, 3));
-  assert(same(get(hit, 1), p(6, 3)));
+  const e = incoming(1, p(0, 2));
+  e.intent!.destination = p(2, 2);
+  e.intent!.movement = 'dash';
+  e.intent!.direction = 2;
+  e.intent!.tiles = [p(3, 1), p(3, 2), p(3, 3)];
+  const hit = act(fixture({ enemies: [e] }), 'light', p(2, 2));
+  assert(same(get(hit, 1), p(2, 2)));
   assert.equal(hit.player.hp, PLAYER_MAX_HP);
   assert.equal(hit.player.attunement, 0);
   assert.equal(get(hit, 1).guard, 30);
@@ -212,6 +218,8 @@ test('blocked gap closers cancel without moving, hitting, or retargeting', () =>
   for (const blockedBy of ['wall', 'enemy', 'player-path', 'player-destination']) {
     const e = incoming(1, p(3, 0));
     e.intent!.destination = blockedBy === 'player-path' ? p(3, 4) : blockedBy === 'player-destination' ? p(3, 3) : p(3, 2);
+    e.intent!.movement = 'dash';
+    e.intent!.direction = 4;
     const s = fixture({ enemies: [e] });
     if (blockedBy === 'wall') s.walls = [p(3, 1)];
     if (blockedBy === 'enemy') s.enemies.push(enemy(2, 3, 1));
@@ -226,6 +234,149 @@ test('enemy attack footprints stay fixed when the player dashes away', () => {
   const hit = act(s, 'dash', p(5, 3));
   assert.equal(hit.player.hp, PLAYER_MAX_HP);
   assert.equal(hit.round, 2);
+});
+
+test('out-of-range enemies only approach and never advertise an empty attack', () => {
+  const s = fixture({ enemies: [enemy(1, 0, 0)] });
+  s.player.x = 6; s.player.y = 5;
+  planEnemies(s);
+  const intent = structuredClone(get(s, 1).intent!);
+  assert.equal(intent.kind, 'move');
+  assert.equal(intent.movement, 'dash');
+  assert.equal(intent.label, 'Dash approach');
+  assert.deepEqual(intent.tiles, []);
+  assert(distance(intent.destination, s.player) < distance(get(s, 1), s.player));
+  const moved = act(s, 'light', p(6, 4));
+  assert(same(get(moved, 1), intent.destination));
+  assert.equal(moved.player.hp, 3);
+});
+
+test('an immobile enemy outside attack range waits instead of inventing an attack', () => {
+  const s = fixture({ walls: [p(1, 0), p(0, 1), p(1, 1)], enemies: [enemy(1, 0, 0)] });
+  planEnemies(s);
+  assert.equal(get(s, 1).intent, null);
+});
+
+test('ground approach takes a lateral wall detour that reduces the route to a firing position', () => {
+  let s = fixture({ walls: [1, 2, 3, 4, 5].map(y => p(2, y)), enemies: [enemy(1, 1, 3, { kind: 'lunge' })] });
+  s.player.x = 5; s.player.y = 3;
+  planEnemies(s);
+  const first = get(s, 1).intent!;
+  assert.equal(first.kind, 'move');
+  assert.equal(first.movement, 'dash');
+  assert.equal(distance(first.destination, s.player), distance(get(s, 1), s.player), 'first detour is lateral, not geometrically closer');
+  assert.deepEqual(first.tiles, []);
+  let moves = 0;
+  while (get(s, 1).intent?.kind === 'move' && moves < 8) {
+    const planned = get(s, 1).intent!.destination;
+    s = act(s, 'light', p(5, 2));
+    assert(same(get(s, 1), planned));
+    moves++;
+  }
+  assert(moves > 0 && moves < 8);
+  assert.equal(get(s, 1).intent?.kind, 'attack');
+  assert(get(s, 1).intent!.tiles.some(point => same(point, s.player)));
+});
+
+test('a stationary enemy in range attacks toward the player', () => {
+  const s = fixture({ enemies: [enemy(1, 3, 2, { kind: 'lunge' })] });
+  planEnemies(s);
+  const intent = get(s, 1).intent!;
+  assert.equal(intent.kind, 'attack'); assert.equal(intent.movement, 'none');
+  assert(same(intent.destination, get(s, 1)));
+  assert.equal(intent.direction, 4);
+  assert(intent.tiles.some(point => same(point, s.player)));
+  assert.equal(intent.label, 'Lunge · 1 damage');
+});
+
+test('Heavy jumps cross walls and units while ground dashes cannot', () => {
+  for (const obstacle of ['walls', 'unit']) {
+    const s = fixture({ enemies: [enemy(1, 0, 0, { kind: 'heavy' })] });
+    if (obstacle === 'walls') s.walls = [p(1, 0), p(0, 1), p(1, 1)];
+    else s.enemies.push(enemy(2, 1, 1, { breached: true, guard: 0, stun: 1 }));
+    planEnemies(s);
+    const intent = get(s, 1).intent!;
+    assert.equal(intent.movement, 'jump'); assert.equal(intent.kind, 'attack');
+    assert.equal(intent.direction, 3); assert(same(intent.destination, p(2, 2)));
+    assert.equal(intent.label, 'Jump heavy · 1 damage');
+    assert(!clearPath(s, get(s, 1), intent.destination, 1));
+    const moved = act(s, 'light', p(3, 4));
+    assert(same(get(moved, 1), p(2, 2))); assert.equal(moved.player.hp, 2);
+  }
+});
+
+test('a Heavy jump can cross a dodging player without turning back to hit them', () => {
+  const s = fixture({ enemies: [enemy(1, 0, 0, { kind: 'heavy' })] });
+  planEnemies(s);
+  const forecast = structuredClone(get(s, 1).intent!);
+  assert.equal(forecast.movement, 'jump'); assert(same(forecast.destination, p(2, 2)));
+  assert(forecast.tiles.some(point => same(point, p(3, 3))));
+  assert(!forecast.tiles.some(point => same(point, p(1, 1))));
+  const dodged = act(s, 'dash', p(1, 1));
+  assert(same(get(dodged, 1), p(2, 2)));
+  assert.equal(dodged.player.hp, 3);
+  assert.deepEqual(get(s, 1).intent, forecast);
+});
+
+test('a blocked or out-of-bounds jump landing cancels the entire advertised action', () => {
+  for (const obstruction of ['wall', 'enemy', 'player', 'outside']) {
+    const s = fixture({ enemies: [enemy(1, 0, 0, { kind: 'heavy' })] });
+    planEnemies(s);
+    assert(same(get(s, 1).intent!.destination, p(2, 2)));
+    if (obstruction === 'wall') s.walls.push(p(2, 2));
+    if (obstruction === 'enemy') s.enemies.push(enemy(2, 2, 2, { breached: true, guard: 0, stun: 1 }));
+    if (obstruction === 'outside') get(s, 1).intent!.destination = p(7, 7);
+    const resolved = obstruction === 'player' ? act(s, 'dash', p(2, 2)) : act(s, 'light', p(3, 4));
+    assert(same(get(resolved, 1), p(0, 0)), obstruction);
+    assert.equal(resolved.player.hp, 3, obstruction);
+  }
+});
+
+test('Sweep cannot attack diagonally through a blocked wall corner', () => {
+  const s = fixture({ walls: [p(3, 2), p(2, 3)], enemies: [enemy(1, 2, 2)] });
+  planEnemies(s);
+  assert.equal(get(s, 1).intent?.kind, 'move');
+  assert.deepEqual(get(s, 1).intent!.tiles, []);
+});
+
+test('move-only intentions never cause damage even if supplied attack tiles', () => {
+  const s = fixture({ enemies: [enemy(1, 0, 0)] });
+  s.player.x = 6; s.player.y = 5;
+  planEnemies(s);
+  assert.equal(get(s, 1).intent!.kind, 'move');
+  get(s, 1).intent!.tiles = [{ ...s.player }];
+  const resolved = act(s, 'light', p(6, 4));
+  assert.equal(resolved.player.hp, 3);
+});
+
+test('selective replanning preserves canceled and unselected intentions and respects frozen time', () => {
+  const s = createGame(13);
+  s.enemies[0].intent = null;
+  s.enemies[0].opening = true;
+  const protectedEnemies = structuredClone([s.enemies[0], s.enemies[2]]);
+  planEnemies(s, new Set([s.enemies[1].id]));
+  assert.deepEqual([s.enemies[0], s.enemies[2]], protectedEnemies);
+  const destinations = s.enemies.flatMap(e => e.intent ? [e.intent.destination] : []);
+  assert.equal(new Set(points(destinations)).size, destinations.length);
+  const before = structuredClone(s);
+  planEnemies(s, new Set()); assert.deepEqual(s, before);
+  s.phase = 'attack';
+  const frozen = structuredClone(s);
+  planEnemies(s); planEnemies(s, new Set(s.enemies.map(e => e.id)));
+  assert.deepEqual(s, frozen);
+});
+
+test('earlier planned landings cannot unexpectedly obstruct later advertised ground dashes', () => {
+  for (const seed of [8, 1, 2, 3, 13, 24, 37]) {
+    let s = createGame(seed);
+    for (let room = 1; room <= TOTAL_ROOMS; room++) {
+      const plans = s.enemies.filter(e => e.intent).map(e => ({ id: e.id, destination: { ...e.intent!.destination } }));
+      assert(!s.enemies.some(e => distance(e, s.player) <= 1), 'Light is a guaranteed miss in fresh arenas');
+      const resolved = act(s, 'light', p(s.player.x, s.player.y - 1));
+      for (const plan of plans) assert(same(get(resolved, plan.id), plan.destination), `seed ${seed}, arena ${room}, enemy ${plan.id}`);
+      if (room < TOTAL_ROOMS) s = execute({ ...s, phase: 'cleared', enemies: [] }, { type: 'nextRoom' });
+    }
+  }
 });
 
 test('surrounded players always retain Light Attack and never need a skipped slot', () => {
@@ -488,7 +639,7 @@ function checkLayout(s: GameState) {
 
 test('all five arenas remain deterministic, connected, and collision-free in the smaller board', () => {
   for (let seed = 1; seed <= 48; seed++) {
-    let s = createGame(seed); assert.deepEqual(s, createGame(seed)); assert.equal(s.version, 4);
+    let s = createGame(seed); assert.deepEqual(s, createGame(seed)); assert.equal(s.version, 5);
     for (let room = 1; room <= TOTAL_ROOMS; room++) {
       checkLayout(s); assert(same(s.player, p(3, 5))); assert(s.walls.length >= 3 && s.walls.length <= 5);
       assert.equal(s.enemies.length, 3 + Math.floor((room - 1) / 2));
@@ -516,11 +667,67 @@ test('enemy planning reserves legal distinct destinations and has deterministic 
   assert(sawGapCloser && sawMultitile && sawOpening);
 });
 
+function segmentTouchesWall(from: Point, to: Point, wall: Point): boolean {
+  let entry = 0, exit = 1;
+  for (const axis of ['x', 'y'] as const) {
+    const delta = to[axis] - from[axis];
+    const low = wall[axis] - 0.5, high = wall[axis] + 0.5;
+    if (delta === 0) {
+      if (from[axis] < low || from[axis] > high) return false;
+    } else {
+      const a = (low - from[axis]) / delta, b = (high - from[axis]) / delta;
+      entry = Math.max(entry, Math.min(a, b)); exit = Math.min(exit, Math.max(a, b));
+    }
+  }
+  return entry <= exit;
+}
+
+test('every planned attack reaches the player with the actual travel heading and clear wall footprint', () => {
+  let attacks = 0, approaches = 0, jumps = 0;
+  for (let seed = 1; seed <= 64; seed++) {
+    for (const location of [p(0, 0), p(6, 0), p(0, 6), p(6, 6), p(3, 3), p(3, 5)]) {
+      const s = createGame(seed);
+      if (s.walls.some(w => same(w, location)) || s.enemies.some(e => same(e, location))) continue;
+      s.player.x = location.x; s.player.y = location.y;
+      planEnemies(s);
+      for (const e of s.enemies) {
+        const intent = e.intent; if (!intent) continue;
+        const moving = !same(e, intent.destination);
+        assert.equal(intent.direction, moving ? directionTo(e, intent.destination) : directionTo(e, s.player));
+        if (moving) {
+          const dx = intent.destination.x - e.x, dy = intent.destination.y - e.y;
+          assert(dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy));
+          assert(distance(e, intent.destination) <= (e.kind === 'lunge' ? 3 : 2));
+          assert.equal(intent.movement, e.kind === 'heavy' ? 'jump' : 'dash');
+          assert(!same(intent.destination, s.player));
+          assert(!s.enemies.some(other => other.id !== e.id && same(other, intent.destination)));
+          if (intent.movement === 'dash') assert(clearPath(s, e, intent.destination, e.id));
+          else jumps++;
+        } else assert.equal(intent.movement, 'none');
+        if (intent.kind === 'attack') {
+          attacks++;
+          assert(intent.tiles.some(point => same(point, s.player)));
+          assert(intent.label.endsWith('1 damage'));
+          for (const point of intent.tiles) {
+            assert(inside(point));
+            assert(!s.walls.some(wall => segmentTouchesWall(intent.destination, point, wall)), JSON.stringify({ enemy: e, point, walls: s.walls }));
+          }
+        } else {
+          approaches++;
+          assert(moving); assert.deepEqual(intent.tiles, []);
+          assert(intent.label.endsWith('approach'));
+        }
+      }
+    }
+  }
+  assert(attacks > 0 && approaches > 0 && jumps > 0);
+});
+
 test('restart resets normal turn state and does not retain obsolete slot fields', () => {
   const s = createGame(731);
   assert.equal(s.phase, 'normal'); assert.equal(s.room, 1); assert.equal(s.round, 1);
   assert.equal(s.player.attunement, 0); assert.equal(s.player.hp, s.player.maxHp);
   assert.equal(s.player.hp, 3); assert.equal(s.player.maxHp, 3);
-  assert(s.enemies.every(e => !e.intent || e.intent.label.endsWith('1 damage')));
+  assert(s.enemies.every(e => !e.intent || (e.intent.kind === 'attack' ? e.intent.label.endsWith('1 damage') : e.intent.label.endsWith('approach'))));
   assert(!('slot' in s)); assert(!('resumePhase' in s));
 });

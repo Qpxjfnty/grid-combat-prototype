@@ -6,8 +6,8 @@ import { COSTS, GUARD, MAX_ATTUNEMENT, PLAYER_MAX_HP, SIZE, THRESHOLD, TOTAL_ROO
 
 import { parseSaveRecord, type SaveRecord } from './save';
 
-const SAVE_KEY = 'grid-combat-prototype.v4';
-const LEGACY_SAVE_KEY = 'grid-combat-prototype.v3';
+const SAVE_KEY = 'grid-combat-prototype.v5';
+const LEGACY_SAVE_KEYS = ['grid-combat-prototype.v4', 'grid-combat-prototype.v3'];
 const eq = (a: Point, b: Point) => a.x === b.x && a.y === b.y;
 const coordinate = (p: Point) => `${String.fromCharCode(65 + p.x)}${p.y + 1}`;
 const names: Record<Ability, string> = { dash: 'Dash', light: 'Light attack', deflect: 'Deflect', dashAttack: 'Dash attack' };
@@ -25,7 +25,7 @@ root.innerHTML = `
     <div class="play-layout">
       <section class="board-column" aria-label="Playfield">
         <div id="board" class="board"></div>
-        <p class="legend"><span>Dashed → move</span><span>Solid → attack</span><span>! Heavy</span><span class="pink">■ opening</span><span class="yellow">■ breached</span></p>
+        <p class="legend"><span>Dashed → dash</span><span>Curved ⇢ jump</span><span>Solid → attack</span><span>! Heavy</span><span class="pink">■ opening</span><span class="yellow">■ breached</span></p>
         <p class="board-note" id="board-note"></p>
       </section>
       <section class="controls" aria-label="Combat controls">
@@ -49,7 +49,8 @@ root.innerHTML = `
         <p><strong>Pulse:</strong> radial line of sight, ${GUARD.pulse} Guard damage. Pink openings breach instantly. Walls and enemies whose Guard survives cast shadows; breached enemies let the pulse pass through. The reach preview shows the exact resulting visibility, including enemies the pulse will breach.</p>
         <p><strong>Dash attack:</strong> the only frozen-time ability. Costs 1 charge. Dash to an empty tile, then hit the three adjacent tiles facing the direction you dashed for ${GUARD.dashAttack} Guard each. The attack always faces forward; it cannot be aimed separately. Hitting an already-breached enemy instead removes 1 HP. A surviving core-hit enemy restores Guard and leaves combat until time resumes. Newly breaching Guard does not damage HP on that same hit.</p>
         <p><strong>Armor:</strong> Guard protects all HP. The bar shows remaining integer Guard. Red dots beneath its right end show HP; empty dots are lost HP. A breach interrupts and stuns through the next enemy resolution. Unbreached Guard regenerates by ${GUARD.regen} per resolution. Breached Guard restores after the stun. No regeneration or enemy movement occurs during an attack turn.</p>
-        <p><strong>Enemy plans:</strong> a dashed arrow leads from an enemy to its planned landing tile. Solid arrows lead from that tile to its attack tiles. Matching IDs identify the source; ! marks Heavy attacks. Hover or tap an enemy or threatened tile to emphasize related plans. Plans are hidden while time is frozen.</p>
+        <p><strong>Enemy plans:</strong> straight dashed arrows show ground dashes; curved dashed arrows show jumps. Solid arrows continue from the landing tile into the attack footprint. Matching IDs identify the source; ! marks Heavy attacks. Hover or tap to emphasize related plans. Plans are hidden while time is frozen.</p>
+        <p><strong>Gap closers:</strong> Lunge and Sweep dash along clear paths. Heavy jumps over walls and units to an empty tile. Moving attacks always face the direction of travel. Enemies only plan an attack if it can reach your current tile; otherwise they approach without attacking. Once shown, the destination and attack tiles stay fixed, so you can dodge. A blocked landing cancels the move and attack.</p>
         <p><strong>Inspection:</strong> hover any tile to see its contents, incoming attacks, and planned arrivals. Hover an enemy to see its Guard, HP, planned destination, and attack tiles. Tap or click to keep the inspection after the pointer leaves. Hovering never changes an action target or advances time.</p>
         <p><strong>Enemy types:</strong> L = basic Lunge (${GUARD.lunge} Guard, 1 HP), S = Sweep, H = Heavy. Pink means an opening. Yellow means breached. “Return” marks a survivor removed until time resumes.</p>
         <p><strong>HP:</strong> start with ${PLAYER_MAX_HP} HP. Every unblocked enemy hit removes exactly 1 HP, including Heavy attacks. Separate enemies can each hit you in the same response. Zero HP ends the run.</p>
@@ -64,7 +65,13 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 
 function readSave(): SaveRecord | null {
   try {
-    return parseSaveRecord(localStorage.getItem(SAVE_KEY) ?? localStorage.getItem(LEGACY_SAVE_KEY));
+    const current = localStorage.getItem(SAVE_KEY);
+    if (current !== null) return parseSaveRecord(current);
+    for (const key of LEGACY_SAVE_KEYS) {
+      const legacy = parseSaveRecord(localStorage.getItem(key));
+      if (legacy) return legacy;
+    }
+    return null;
   } catch { return null; }
 }
 const initialSave = readSave();
@@ -160,8 +167,12 @@ function inspection(e: Enemy) {
   if (e.breached) text += 'BREACHED: core exposed, intention interrupted. Stunned through the next enemy resolution.';
   else {
     if (e.opening) text += 'OPENING: pulse breaches instantly. ';
-    if (e.intent) text += `${e.intent.label}. ${eq(e, e.intent.destination) ? `Stays at ${coordinate(e)}.` : `Moves ${coordinate(e)} → ${coordinate(e.intent.destination)}.`} Hits ${e.intent.tiles.length ? e.intent.tiles.map(coordinate).join(', ') : 'no tiles'}.`;
-    else text += 'No attack planned. Intention interrupted.';
+    if (e.intent) {
+      const intent = e.intent;
+      const movement = intent.movement === 'jump' ? 'Jumps' : 'Dashes';
+      text += `${intent.label}. ${eq(e, intent.destination) ? `Stays at ${coordinate(e)}.` : `${movement} ${coordinate(e)} → ${coordinate(intent.destination)}.`} `;
+      text += intent.kind === 'attack' ? `Hits ${intent.tiles.map(coordinate).join(', ')}.` : 'Repositions without attacking.';
+    } else text += 'No action planned.';
   }
   return text;
 }
@@ -191,12 +202,12 @@ function renderInspection() {
   $('inspect-vitals').innerHTML = enemy ? unitVitals(enemy) : player ? hpDots(state.player.hp, state.player.maxHp) : '';
   const details: string[] = [];
   if (p) {
-    details.push(enemy ? inspection(enemy) : player ? 'Your position.' : wall ? 'Blocks movement and pulse line of sight.' : 'Open tile.');
+    details.push(enemy ? inspection(enemy) : player ? 'Your position.' : wall ? 'Blocks ground movement, attacks, and pulse line of sight. Jumps can clear it.' : 'Open tile.');
     const active = state.enemies.filter(e => e.hp > 0 && !e.removed && !e.breached && e.intent);
     const threats = active.filter(e => e.intent!.tiles.some(t => eq(t, p)));
     details.push(threats.length ? `Planned attacks here: ${threats.map(e => `${e.kind[0].toUpperCase()}${e.id} (${e.intent!.label})`).join('; ')}.` : 'No attacks planned here.');
     const arrivals = active.filter(e => !eq(e, p) && eq(e.intent!.destination, p));
-    if (arrivals.length) details.push(`Planned arrivals: ${arrivals.map(e => `${e.kind[0].toUpperCase()}${e.id}`).join(', ')}.`);
+    if (arrivals.length) details.push(`Planned arrivals: ${arrivals.map(e => `${e.kind[0].toUpperCase()}${e.id} (${e.intent!.movement})`).join(', ')}.`);
   }
   $('inspect-info').textContent = p ? details.join(' ') : 'Hover a tile to inspect it. Tap or click to keep its details.';
   $('clear-inspect').hidden = !p;

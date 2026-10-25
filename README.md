@@ -1,6 +1,6 @@
 # Grid combat prototype
 
-Version 0.4 is a minimal, touch-friendly combat prototype on a **7 × 7 grid**. It uses placeholder units, a TypeScript simulation, a Phaser board, and plain HTML controls. There is no setting or flavor.
+Version 0.5 is a minimal, touch-friendly combat prototype on a **7 × 7 grid**. It uses placeholder units, a TypeScript simulation, a Phaser board, and plain HTML controls. There is no setting or flavor.
 
 ## Play
 
@@ -24,11 +24,13 @@ Guard appears as a continuous bar with integer current/max values. Red dots bene
 
 Action colors match their targeting previews: muted green for Dash, light beige for Light Attack, sky blue for Deflect, pink for Freeze, and gold for Dash Attack. Bright pink enemy outlines mark openings; yellow marks breached armor.
 
-Dashed arrows connect each enemy to its planned landing tile. Solid arrows connect that landing tile to its attack tiles. Matching enemy IDs identify the source, including when attacks overlap; ! marks Heavy attacks. Hover or tap an enemy or threatened tile to emphasize related plans. Plans are hidden during Freeze so the Dash Attack preview stays clear.
+Straight dashed arrows show ground dashes; curved dashed arrows show jumps. Both connect each enemy to its planned landing tile. Solid arrows continue forward into its attack tiles. Matching enemy IDs identify the source, including when attacks overlap; ! marks Heavy attacks. Hover or tap an enemy or threatened tile to emphasize related plans. Plans are hidden during Freeze so the Dash Attack preview stays clear.
+
+Lunge and Sweep dash along clear ground paths. Heavy jumps over obstacles and units. Moving attacks always face the direction of travel. Enemies only plan an attack that reaches your current tile; otherwise they reposition without attacking. Their shown plans stay fixed, so moving out of the footprint makes them miss.
 
 Hover or tap a tile to inspect its contents, enemy arrivals, and planned attacks. Hovering never changes your action target or advances time. Controls, detailed rules, and display options are collapsed under **Controls & rules**; seed and restart options are under **Run**.
 
-Runs save automatically in the current browser, including during Freeze. Existing version 3 runs retain progress and migrate to the 3-HP cap. Version 4 uses separate storage so older open tabs cannot overwrite the updated run. Older version 1 and 2 saves remain untouched and are not converted from their 9 × 9 rules.
+Runs save automatically in the current browser, including during Freeze. Existing version 3 and 4 runs retain progress, use the 3-HP cap, and refresh old intentions once for the new movement rules. Version 5 uses separate storage so older open tabs cannot overwrite the updated run. Older version 1 and 2 saves remain untouched and are not converted from their 9 × 9 rules.
 
 ## Development
 

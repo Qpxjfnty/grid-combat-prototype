@@ -1,4 +1,4 @@
-# Combat prototype rules, version 0.4
+# Combat prototype rules, version 0.5
 
 A fresh, placeholder-only combat prototype with a minimal interface. This version uses a 7 × 7 arena and one normal action per turn.
 
@@ -59,9 +59,13 @@ Removed enemies do not block movement. A surviving enemy returns when Freeze end
 
 | Placeholder | Starting Guard | HP | Attack |
 | --- | ---: | ---: | --- |
-| Lunge | 5 | 1 | Gap-closing movement and a narrow attack; 1 damage |
-| Sweep | 15 | 2 | Mobile three-tile arc; 1 damage |
-| Heavy | 20 | 3 | Mobile larger footprint; 1 damage; Light Attack cannot parry it |
+| Lunge | 5 | 1 | Ground dash up to 3 tiles, then a forward two-tile line; 1 damage |
+| Sweep | 15 | 2 | Ground dash up to 2 tiles into a forward three-tile arc; 1 damage |
+| Heavy | 20 | 3 | Jump up to 2 tiles into a larger forward footprint; 1 damage; Light Attack cannot parry it |
+
+Enemy gap closers move along rows, columns, or diagonals. Ground dashes need a clear path; jumps can cross walls, units, and the player, but must land on an empty non-wall tile. Every moving attack faces its direction of travel, with a forward footprint from its landing tile. It cannot turn back or aim independently after moving. Adjacent enemies can also attack from their current tile. Attack footprints respect walls.
+
+At planning time, an enemy only commits an attack if the footprint can reach the player’s current tile. Otherwise it approaches without attacking, following a shortest legal route to a firing position when a detour is needed, or waits if it cannot advance. Earlier reserved landing tiles also block later ground paths and diagonal corners, so allies do not invalidate advertised movements. The move and attack resolve as one committed action. The destination and attack tiles stay fixed after the player acts: dodging can make the attack miss. Occupying its landing tile cancels the move and attack; blocking a ground path also cancels it, while a jump can clear the new obstruction.
 
 Guard protects all HP. Breaching cancels the current intention and stuns the enemy through the next enemy response. At the end of that response, its Guard restores. Unbreached enemies regenerate **10 Guard per normal enemy response**, up to their maximum. Breaching itself never removes HP.
 
@@ -73,7 +77,7 @@ A run spans five seeded arenas. The player starts with a maximum of 3 HP. Every 
 
 The persistent interface contains the board, player HP and charge, available actions, and contextual targeting or inspection. Touch input uses action → target → confirm. Hover and tap inspection expose enemy Guard, HP, openings, destinations, and attack tiles without spending a turn. Detailed controls, rules, and display options are collapsed under Controls & rules; seed and restart controls are under Run.
 
-Enemy plans are drawn by source. A dashed movement arrow runs from the enemy's current tile to its labeled landing marker. Solid attack arrows originate at that landing tile, with source IDs on attack tiles and ! for Heavy. Source colors and IDs stay consistent as enemies move. Overlapping threats retain each source label. Hovering or tapping an enemy emphasizes its plan; inspecting a threatened or landing tile emphasizes its related sources. Plans are hidden during frozen time, while inspection text remains available. Player action previews keep their separate functional colors.
+Enemy plans are drawn by source. A straight dashed arrow shows a ground dash; a curved dashed arrow shows a jump. Both run from the enemy's current tile to its labeled landing marker. Solid attack arrows continue forward from that landing tile, with source IDs on attack tiles and ! for Heavy. Source colors and IDs stay consistent as enemies move. Overlapping threats retain each source label. Hovering or tapping an enemy emphasizes its plan; inspecting a threatened or landing tile emphasizes its related sources. Plans are hidden during frozen time, while inspection text remains available. Repositioning moves show only movement and landing markers, without attack tiles. Inspection identifies dash, jump, attack, or repositioning. Player action previews keep their separate functional colors.
 
 Functional colors remain consistent between action buttons, selected states, confirmations, target markers, and previews:
 
@@ -89,7 +93,7 @@ Enemy openings retain their distinct bright pink. The interface uses placeholder
 
 ## Persistence and implementation
 
-Version 4 saves use a separate browser storage entry. Compatible version 3 runs migrate with current HP capped at 3 and maximum HP set to 3; zero HP stays zero. Arena progress, frozen budget, enemy state, and pulse are preserved. Saved intentions are relabeled to show 1 damage, including Heavy attacks. The old save is left untouched, and older open tabs cannot overwrite version 4 progress. Version 1 and 2 saves remain untouched; their 9 × 9 runs are not migrated into this ruleset. Restarting replaces only the current version's saved run.
+Version 5 saves use a separate browser storage entry. Compatible version 3 and 4 runs retain their progress and migrate to the current rules. Current HP is capped at 3 and maximum HP is 3; zero HP stays zero. Arena progress, frozen budget, enemy positions/vitals, and pulse are preserved. Existing intentions are refreshed once to use forward attacks, jumps, or attack-free approaches; canceled intentions remain canceled. This migration does not advance time, including during Freeze. The old saves are left untouched, and older open tabs cannot overwrite version 5 progress. Version 1 and 2 saves remain untouched; their 9 × 9 runs are not migrated into this ruleset. Restarting replaces only the current version's saved run.
 
 The TypeScript simulation is independent of Phaser. The board uses canvas; text and controls use the DOM. Responsive sizing preserves square tiles and updates pointer coordinates after resizing. Reduced-motion preferences suppress the pulse animation. GitHub Pages serves the static production build.
 

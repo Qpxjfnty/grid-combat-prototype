@@ -82,6 +82,46 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
       this.layer.lineBetween(tip.x, tip.y, tip.x - ux * 5 + uy * 3, tip.y - uy * 5 - ux * 3)
         .lineBetween(tip.x, tip.y, tip.x - ux * 5 - uy * 3, tip.y - uy * 5 + ux * 3);
     }
+    jumpArrow(from: Point, to: Point, color: number, alpha: number, width: number) {
+      const distance = Math.hypot(to.x - from.x, to.y - from.y);
+      if (distance < 1) return;
+      const normal = { x: -(to.y - from.y) / distance, y: (to.x - from.x) / distance };
+      const middle = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+      const bend = Math.min(76, Math.max(36, distance * 0.38));
+      const clamp = (value: number) => Math.max(PAD + 12, Math.min(EDGE - PAD - 12, value));
+      const candidates = [-1, 1].map(sign => ({ x: clamp(middle.x + normal.x * bend * sign), y: clamp(middle.y + normal.y * bend * sign) }));
+      // Curve toward the board's interior. Clamping the control point keeps the
+      // whole quadratic curve (and its arrowhead margin) inside the playfield.
+      const control = candidates.sort((a, b) => Math.hypot(a.x - EDGE / 2, a.y - EDGE / 2) - Math.hypot(b.x - EDGE / 2, b.y - EDGE / 2))[0];
+      const points: Point[] = [];
+      const lengths = [0];
+      const count = Math.max(32, Math.ceil(distance / 5));
+      for (let i = 0; i <= count; i++) {
+        const t = i / count;
+        const u = 1 - t;
+        const point = { x: u * u * from.x + 2 * u * t * control.x + t * t * to.x, y: u * u * from.y + 2 * u * t * control.y + t * t * to.y };
+        points.push(point);
+        if (i) lengths.push(lengths[i - 1] + Math.hypot(point.x - points[i - 1].x, point.y - points[i - 1].y));
+      }
+      const at = (along: number): Point => {
+        const i = Math.max(1, lengths.findIndex(length => length >= along));
+        const fraction = (along - lengths[i - 1]) / (lengths[i] - lengths[i - 1]);
+        return { x: points[i - 1].x + (points[i].x - points[i - 1].x) * fraction, y: points[i - 1].y + (points[i].y - points[i - 1].y) * fraction };
+      };
+      const end = lengths[lengths.length - 1] - 15;
+      if (end <= 28) return;
+      this.layer.lineStyle(width, color, alpha);
+      for (let start = 25; start < end - 4; start += 10) {
+        const stop = Math.min(start + 5, end - 4);
+        const a = at(start), b = at((start + stop) / 2), c = at(stop);
+        this.layer.lineBetween(a.x, a.y, b.x, b.y).lineBetween(b.x, b.y, c.x, c.y);
+      }
+      const tip = at(end), before = at(end - 4);
+      const tangentLength = Math.hypot(tip.x - before.x, tip.y - before.y);
+      const ux = (tip.x - before.x) / tangentLength, uy = (tip.y - before.y) / tangentLength;
+      this.layer.lineBetween(tip.x, tip.y, tip.x - ux * 5 + uy * 3, tip.y - uy * 5 - ux * 3)
+        .lineBetween(tip.x, tip.y, tip.x - ux * 5 - uy * 3, tip.y - uy * 5 + ux * 3);
+    }
     sourceChip(point: Point, enemy: Enemy, x: number, y: number, alpha: number) {
       const center = coord(point);
       const color = planColor(enemy);
@@ -114,6 +154,7 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
       const planAlpha = (e: Enemy) => faded(e) ? 0.14 : highlighted.has(e.id) ? 0.95 : 0.55;
       const sources = new Map<string, { point: Point; enemies: Enemy[] }>();
       for (const enemy of plans) {
+        if (enemy.intent!.kind !== 'attack') continue;
         for (const point of enemy.intent!.tiles) {
           this.tile(point, planColor(enemy), faded(enemy) ? 0.018 : highlighted.has(enemy.id) ? 0.15 : 0.065);
           const key = `${point.x},${point.y}`;
@@ -159,7 +200,8 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
             .lineBetween(tip.x, tip.y, tip.x - ux * 6 - uy * 4, tip.y - uy * 6 + ux * 4);
         }
       }
-      // All plans share the same visual grammar: dashed movement, solid attacks.
+      // Straight dashed paths are ground dashes; curved dashed paths are jumps.
+      // Solid branches show only the committed attack footprint after landing.
       // They render beneath units and their vitals, including along crossing paths.
       for (const enemy of plans) {
         const intent = enemy.intent!;
@@ -168,10 +210,13 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
         const origin = coord(enemy);
         const landing = coord(intent.destination);
         const moves = !eq(enemy, intent.destination);
-        if (moves) this.arrow(origin, landing, color, alpha, true, 25, 15, highlighted.has(enemy.id) ? 2 : 1.5);
-        for (const point of intent.tiles) {
-          const occupied = eq(point, s.player) || active.some(e => eq(e, point));
-          this.arrow(landing, coord(point), color, alpha, false, moves ? 15 : 25, occupied ? 25 : 7, highlighted.has(enemy.id) ? 2 : 1.3);
+        if (moves && intent.movement === 'jump') this.jumpArrow(origin, landing, color, alpha, highlighted.has(enemy.id) ? 2 : 1.5);
+        else if (moves && intent.movement === 'dash') this.arrow(origin, landing, color, alpha, true, 25, 15, highlighted.has(enemy.id) ? 2 : 1.5);
+        if (intent.kind === 'attack') {
+          for (const point of intent.tiles) {
+            const occupied = eq(point, s.player) || active.some(e => eq(e, point));
+            this.arrow(landing, coord(point), color, alpha, false, moves ? 15 : 25, occupied ? 25 : 7, highlighted.has(enemy.id) ? 2 : 1.3);
+          }
         }
         if (moves) {
           // Frozen movement can occupy a previously planned landing tile. Keep its
