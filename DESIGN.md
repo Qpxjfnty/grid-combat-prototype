@@ -1,4 +1,4 @@
-# Combat prototype rules, version 0.6.1
+# Combat prototype rules, version 0.6.2
 
 A fresh, placeholder-only combat prototype with a minimal interface. This version uses a 7 × 7 arena and one normal action per turn.
 
@@ -88,7 +88,7 @@ A run spans five seeded arenas. The player starts on D4, the middle tile, in eve
 
 The persistent interface contains the board, player HP and charge, available actions, and contextual targeting or inspection. Touch input uses action → target → confirm. Hover and tap inspection expose enemy Guard, HP, openings, destinations, and attack tiles without spending a turn. Detailed controls, rules, and display options are collapsed under Controls & rules; seed and restart controls are under Run.
 
-Enemy plans are drawn by source. A straight dashed arrow shows a ground dash; a curved dashed arrow shows a jump. Both run from the enemy's current tile to its labeled landing marker. Solid attack arrows continue forward from that landing tile, with source IDs on attack tiles and ! for Heavy. Source colors and IDs stay consistent as enemies move. Overlapping threats retain each source label. Hovering or tapping an enemy emphasizes its plan; inspecting a threatened or landing tile emphasizes its related sources. Plans are hidden during frozen time, while inspection text remains available. Repositioning moves show only movement and landing markers, without attack tiles. Inspection identifies dash, jump, attack, repositioning, or recovery. The Heavy shows a small 1/4–4/4 progress marker. Its burst has a distinct impact marker, and the attack rays originate there. Light’s center tile is marked separately from its two side tiles. Player action previews keep their separate functional colors.
+Enemy plans are drawn by source. A straight dashed arrow shows a ground dash; an upward-curving dashed arrow shows a jump. Both run from the enemy's current tile to its labeled landing marker. Solid attack arrows continue forward from that landing tile, with source IDs on attack tiles and ! for Heavy. Source colors and IDs stay consistent as enemies move. Overlapping threats retain each source label. Hovering or tapping an enemy emphasizes its plan; inspecting a threatened or landing tile emphasizes its related sources. Plans are hidden during frozen time, while inspection text remains available. Repositioning moves show only movement and landing markers, without attack tiles. Inspection identifies dash, jump, attack, repositioning, or recovery. The Heavy shows a small 1/4–4/4 progress marker. Its burst has a distinct impact marker, and the attack rays originate there. Light’s center tile is marked separately from its two side tiles. Player action previews keep their separate functional colors.
 
 Functional colors remain consistent between action buttons, selected states, confirmations, target markers, and previews:
 

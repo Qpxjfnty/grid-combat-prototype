@@ -1,5 +1,10 @@
 # Verification
 
+## Version 0.6.2 — 25 October 2026
+
+- Jump arrows always lift toward screen-up, with a small horizontal bow for vertical jumps and a shallower curve near the top edge. Source and landing markers retain their roles. Combat and persistence are unchanged.
+- Visually inspected leftward, diagonal downward, vertical upward/downward, and top-row jumps in WebKit iPad emulation at 1194×834. Curves and arrowheads stay inside the board, with no horizontal overflow. Production typecheck/build pass.
+
 ## Version 0.6.1 — 25 October 2026
 
 - All 96 checks pass (80 combat, 16 persistence), along with the production typecheck/build. Heavy footprint checks cover all three attack stages and eight headings, including walls, other units, board edges, self-blocked burst rays, and unchanged movement/landing restrictions.

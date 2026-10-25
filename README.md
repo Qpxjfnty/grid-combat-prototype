@@ -1,6 +1,6 @@
 # Grid combat prototype
 
-Version 0.6.1 is a minimal, touch-friendly combat prototype on a **7 × 7 grid**. It uses placeholder units, a TypeScript simulation, a Phaser board, and plain HTML controls. There is no setting or flavor.
+Version 0.6.2 is a minimal, touch-friendly combat prototype on a **7 × 7 grid**. It uses placeholder units, a TypeScript simulation, a Phaser board, and plain HTML controls. There is no setting or flavor.
 
 ## Play
 
@@ -24,7 +24,7 @@ Guard appears as a continuous bar with integer current/max values. Red dots bene
 
 Action colors match their targeting previews: muted green for Dash, light beige for Light Attack, sky blue for Deflect, pink for Freeze, and gold for Dash Attack. Bright pink enemy outlines mark openings; yellow marks breached armor.
 
-Straight dashed arrows show ground dashes; curved dashed arrows show jumps. Both connect each enemy to its planned landing tile. Solid arrows continue forward into its attack tiles. The Heavy’s burst rays start at a marked impact tile. Matching enemy IDs identify the source, including when attacks overlap; ! marks Heavy attacks. Hover or tap an enemy or threatened tile to emphasize related plans. Plans are hidden during Freeze so the Dash Attack preview stays clear.
+Straight dashed arrows show ground dashes; upward-curving dashed arrows show jumps. Both connect each enemy to its planned landing tile. Solid arrows continue forward into its attack tiles. The Heavy’s burst rays start at a marked impact tile. Matching enemy IDs identify the source, including when attacks overlap; ! marks Heavy attacks. Hover or tap an enemy or threatened tile to emphasize related plans. Plans are hidden during Freeze so the Dash Attack preview stays clear.
 
 Dashes check only the tiles they cross: neighboring enemies or walls do not block an open diagonal. Lunge and Sweep use the same ground-path rule. Heavy uses a four-turn combo: jump to an empty tile and hit all eight neighbors (pink opening), advance up to one tile into a wide sweep, advance up to one tile into an adjacent-impact burst, then recover. It aims again between steps; each displayed step stays fixed while you respond. The burst extends three tiles in eight directions from its impact, with only the Heavy itself blocking its ray. All Heavy attack footprints pass through walls and other enemies. Its small 1/4–4/4 marker and inspection text show progress. Moving attacks always face the direction of travel. Enemies only plan an attack that reaches your current tile; otherwise they reposition without attacking. Their shown plans stay fixed, so moving out of the footprint makes them miss.
 

@@ -85,14 +85,13 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
     jumpArrow(from: Point, to: Point, color: number, alpha: number, width: number) {
       const distance = Math.hypot(to.x - from.x, to.y - from.y);
       if (distance < 1) return;
-      const normal = { x: -(to.y - from.y) / distance, y: (to.x - from.x) / distance };
       const middle = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
       const bend = Math.min(76, Math.max(36, distance * 0.38));
       const clamp = (value: number) => Math.max(PAD + 12, Math.min(EDGE - PAD - 12, value));
-      const candidates = [-1, 1].map(sign => ({ x: clamp(middle.x + normal.x * bend * sign), y: clamp(middle.y + normal.y * bend * sign) }));
-      // Curve toward the board's interior. Clamping the control point keeps the
-      // whole quadratic curve (and its arrowhead margin) inside the playfield.
-      const control = candidates.sort((a, b) => Math.hypot(a.x - EDGE / 2, a.y - EDGE / 2) - Math.hypot(b.x - EDGE / 2, b.y - EDGE / 2))[0];
+      // Lift every jump toward screen-up. A small sideways bow keeps vertical
+      // jumps visibly curved; the top-edge clamp only flattens their height.
+      const verticalBow = Math.max(0, 1 - Math.abs(to.x - from.x) / CELL) * bend * (middle.x <= EDGE / 2 ? 1 : -1);
+      const control = { x: clamp(middle.x + verticalBow), y: clamp(Math.min(from.y, to.y) - bend) };
       const points: Point[] = [];
       const lengths = [0];
       const count = Math.max(32, Math.ceil(distance / 5));
