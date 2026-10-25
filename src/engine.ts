@@ -397,8 +397,10 @@ export function planEnemies(state: GameState, onlyIds?: ReadonlySet<number>): vo
   }
 }
 
-function resolveEnemies(state: GameState, lightHit?: boolean): void {
+function resolveEnemies(state: GameState, lightHitIds?: ReadonlySet<number>): void {
   const recovering = new Set(state.enemies.filter(enemy => active(enemy) && (enemy.breached || enemy.stun > 0)).map(enemy => enemy.id));
+  // The set is local: each hit or parry suppresses armor recovery for this response only.
+  const suppressedGuard = new Set(lightHitIds);
   const hitBy: string[] = [], parried: string[] = [], deflected: string[] = [];
   for (const enemy of state.enemies) {
     if (!active(enemy) || recovering.has(enemy.id) || !enemy.intent) continue;
@@ -423,10 +425,16 @@ function resolveEnemies(state: GameState, lightHit?: boolean): void {
       const offset = (approach - defense.direction + 8) % 8;
       return defense.kind === 'deflect' && (offset <= 2 || offset >= 6);
     });
-    const parry = !intent.heavy && state.defenses.some(defense => defense.kind === 'light' && (defense.direction === approach || defense.parryEnemyId === enemy.id));
+    const parry = !intent.heavy && state.defenses.some(defense => {
+      const offset = (approach - defense.direction + 8) % 8;
+      return defense.kind === 'light' && (offset <= 1 || offset >= 7 || lightHitIds?.has(enemy.id) || defense.parryEnemyId === enemy.id);
+    });
     const sourceId = `${enemy.kind === 'lunge' ? 'L' : enemy.kind === 'sweep' ? 'S' : 'H'}${enemy.id}`;
     if (deflection) deflected.push(sourceId);
-    else if (parry) parried.push(sourceId);
+    else if (parry) {
+      parried.push(sourceId);
+      suppressedGuard.add(enemy.id);
+    }
     else {
       state.player.hp = Math.max(0, state.player.hp - ENEMY_DAMAGE);
       hitBy.push(sourceId);
@@ -436,17 +444,17 @@ function resolveEnemies(state: GameState, lightHit?: boolean): void {
     enemy.cycle++;
     if (recovering.has(enemy.id)) {
       enemy.stun = Math.max(0, enemy.stun - 1);
-      if (enemy.stun === 0) {
+      if (enemy.stun === 0 && !suppressedGuard.has(enemy.id)) {
         enemy.guard = enemy.maxGuard;
         enemy.breached = false;
       }
-    } else if (!enemy.breached) {
+    } else if (!enemy.breached && !suppressedGuard.has(enemy.id)) {
       enemy.guard = Math.min(enemy.maxGuard, enemy.guard + GUARD.regen);
     }
     enemy.intent = null;
   }
   // Hit and parry share one reward, including a parry after the initial swing missed.
-  const lightEarned = lightHit !== undefined && (lightHit || parried.length > 0);
+  const lightEarned = lightHitIds !== undefined && (lightHitIds.size > 0 || parried.length > 0);
   const beforeCharge = state.player.attunement;
   if (lightEarned) state.player.attunement = Math.min(MAX_ATTUNEMENT, beforeCharge + 2);
   const lightGain = state.player.attunement - beforeCharge;
@@ -502,7 +510,7 @@ export function execute(state: GameState, command: Command): GameState {
   if (!target || !Number.isInteger(target.x) || !Number.isInteger(target.y) || !validTargets(state, ability).some(point => same(point, target))) return state;
   const next = structuredClone(state);
   const direction = directionTo(next.player, target);
-  let lightHit: boolean | undefined;
+  let lightHitIds: ReadonlySet<number> | undefined;
   if (ability === 'dash' || ability === 'dashAttack') {
     next.player.x = target.x;
     next.player.y = target.y;
@@ -528,11 +536,11 @@ export function execute(state: GameState, command: Command): GameState {
     const hits = next.enemies.filter(enemy => active(enemy) && tiles.some(point => same(point, enemy)));
     const centerEnemy = hits.find(enemy => same(enemy, target));
     for (const enemy of hits) damageGuard(next, enemy, same(enemy, target) ? GUARD.lightCenter : GUARD.lightSide);
-    lightHit = hits.length > 0;
+    lightHitIds = new Set(hits.map(enemy => enemy.id));
     next.defenses.push({ kind: 'light', direction, ...(centerEnemy ? { parryEnemyId: centerEnemy.id } : {}) });
     log(next, `Light Attack: ${GUARD.lightCenter} center / ${GUARD.lightSide} side Guard.`);
   }
-  if (state.phase === 'normal') resolveEnemies(next, lightHit);
+  if (state.phase === 'normal') resolveEnemies(next, lightHitIds);
   else checkClear(next);
   return next;
 }

@@ -181,7 +181,7 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
         }
       }
       for (const d of s.defenses) {
-        const offsets = d.kind === 'deflect' ? [-2, -1, 0, 1, 2] : [0];
+        const offsets = d.kind === 'deflect' ? [-2, -1, 0, 1, 2] : [-1, 0, 1];
         for (const offset of offsets) {
           const direction = DIRS[(d.direction + offset + 8) % 8];
           const p = { x: s.player.x + direction.x, y: s.player.y + direction.y };

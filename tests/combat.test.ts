@@ -190,12 +190,12 @@ test('normal Dash costs and generates no charge and immediately resolves enemy i
   assert.deepEqual(s, before);
 });
 
-test('Light deals two Guard to center and one to sides before automatic regeneration', () => {
+test('Light deals two Guard to center and one to sides and suppresses only their regeneration', () => {
   const s = fixture({ enemies: [enemy(1, 3, 2, { maxGuard: 50 }), enemy(2, 2, 2, { maxGuard: 50 }), enemy(3, 4, 2, { maxGuard: 50 }), enemy(4, 4, 3, { maxGuard: 50 })] });
   const hit = act(s, 'light', p(3, 2));
-  assert.equal(get(hit, 1).guard, 20 - 2 + 10);
-  assert.equal(get(hit, 2).guard, 20 - 1 + 10);
-  assert.equal(get(hit, 3).guard, 20 - 1 + 10);
+  assert.equal(get(hit, 1).guard, 20 - 2);
+  assert.equal(get(hit, 2).guard, 20 - 1);
+  assert.equal(get(hit, 3).guard, 20 - 1);
   assert.equal(get(hit, 4).guard, 20 + 10);
   assert.equal(hit.player.attunement, 2);
   assert.equal(hit.round, 2);
@@ -225,7 +225,7 @@ test('Light can charge from a breached enemy without harming its core', () => {
   const hit = act(s, 'light', p(3, 2));
   assert.equal(hit.player.attunement, 2);
   assert.equal(get(hit, 1).hp, 3);
-  assert.equal(get(hit, 1).guard, 20);
+  assert.equal(get(hit, 1).guard, 0); assert(get(hit, 1).breached);
   assert.equal(get(hit, 1).stun, 0);
 });
 
@@ -234,15 +234,66 @@ test('Light center parries a normal attack without extra counter damage', () => 
   const hit = act(s, 'light', p(3, 2));
   assert.equal(hit.player.hp, PLAYER_MAX_HP);
   assert.equal(hit.player.attunement, 2);
-  assert.equal(get(hit, 1).guard, 20 - 2 + 10);
+  assert.equal(get(hit, 1).guard, 20 - 2);
   assert.deepEqual(hit.defenses, []);
 });
 
-test('Light side direction does not parry and center never parries Heavy', () => {
-  for (const [origin, heavy, damage] of [[p(2, 2), false, 1], [p(3, 2), true, 1]] as const) {
+test('Light covers both side directions but cannot parry Heavy at center or sides', () => {
+  for (const [origin, heavy, damage] of [[p(2, 2), false, 0], [p(4, 2), false, 0], [p(3, 2), true, 1], [p(2, 2), true, 1], [p(4, 2), true, 1]] as const) {
     const s = fixture({ enemies: [incoming(1, origin, heavy)] });
     const hit = act(s, 'light', p(3, 2));
     assert.equal(hit.player.hp, PLAYER_MAX_HP - damage);
+    assert.equal(get(hit, 1).guard, same(origin, p(3, 2)) ? 18 : 19);
+  }
+});
+
+test('Light parries exactly three incoming directions in every heading and suppresses parry-only regeneration', () => {
+  for (let facing = 0; facing < 8; facing++) for (let approach = 0; approach < 8; approach++) {
+    const source = DIRS[approach], aim = DIRS[facing];
+    const s = fixture({ enemies: [incoming(11, p(3 + source.x * 2, 3 + source.y * 2))] });
+    const response = act(s, 'light', p(3 + aim.x, 3 + aim.y));
+    const offset = (approach - facing + 8) % 8, parried = offset <= 1 || offset >= 7;
+    assert.equal(response.player.hp, parried ? 3 : 2);
+    assert.equal(response.player.attunement, parried ? 2 : 0);
+    assert.equal(get(response, 11).guard, parried ? 20 : 30);
+  }
+});
+
+test('one Light interrupts all three legal incoming targets and their Guard regenerates on the next unsuppressed response', () => {
+  const s = fixture({ enemies: [enemy(11, 3, 2, { kind: 'lunge', maxGuard: 50 }), enemy(12, 2, 2, { maxGuard: 50 }), enemy(13, 4, 2, { maxGuard: 50 })] });
+  planEnemies(s);
+  assert(s.enemies.every(e => e.intent?.kind === 'attack' && e.intent.tiles.some(point => same(point, s.player))));
+  const hit = act(s, 'light', p(3, 2));
+  assert.equal(hit.player.hp, 3); assert.equal(hit.player.attunement, 2);
+  assert.deepEqual(hit.enemies.map(e => e.guard), [18, 19, 19]);
+  assert.equal(hit.log[0], 'Parried L11, S12, S13. Light +2 charge.');
+  const restored = act(hit, 'deflect', p(3, 2));
+  assert.equal(restored.player.hp, 3); assert.equal(restored.player.attunement, 1);
+  assert.deepEqual(restored.enemies.map(e => e.guard), [28, 29, 29]);
+});
+
+test('Light keeps newly breached and already breached Guard at zero until an unsuppressed response', () => {
+  const s = fixture({ enemies: [enemy(11, 3, 2, { guard: 2 }), enemy(12, 2, 2, { guard: 1 }), enemy(13, 4, 2, { guard: 0, breached: true, stun: 1 }), enemy(14, 0, 0, { guard: 0, breached: true, stun: 1 })] });
+  planEnemies(s);
+  const first = act(s, 'light', p(3, 2));
+  for (const id of [11, 12, 13]) {
+    const e = get(first, id);
+    assert.equal(e.guard, 0); assert(e.breached); assert.equal(e.stun, 0); assert.equal(e.intent, null);
+  }
+  assert.equal(get(first, 14).guard, 20); assert(!get(first, 14).breached);
+  const held = act(first, 'light', p(3, 2));
+  for (const id of [11, 12, 13]) {
+    const e = get(held, id);
+    assert.equal(e.guard, 0); assert(e.breached); assert.equal(e.stun, 0); assert.equal(e.hp, 3);
+  }
+  const frozen = execute(held, { type: 'beginAttack' });
+  assert.equal(frozen.phase, 'attack');
+  const resumed = execute(frozen, { type: 'endAttack' });
+  for (const id of [11, 12, 13]) assert.equal(get(resumed, id).guard, 0);
+  const restored = act(resumed, 'dash', p(3, 5));
+  for (const id of [11, 12, 13]) {
+    const e = get(restored, id);
+    assert.equal(e.guard, e.maxGuard); assert(!e.breached); assert.equal(e.stun, 0);
   }
 });
 
@@ -274,7 +325,7 @@ test('three unblocked incoming attacks are fatal and further hits never make HP 
 
 test('a legal Light miss earns charge when its direction parries the arriving gap closer', () => {
   for (const initialCharge of [0, 9, 10]) {
-    const s = bank(fixture({ enemies: [enemy(11, 3, 0, { kind: 'lunge', hp: 1, maxHp: 1, guard: 5, maxGuard: 5 })] }), initialCharge);
+    const s = bank(fixture({ enemies: [enemy(11, 3, 0, { kind: 'lunge', hp: 1, maxHp: 1, guard: 3, maxGuard: 5 })] }), initialCharge);
     planEnemies(s);
     const intent = get(s, 11).intent!;
     assert.equal(intent.movement, 'dash'); assert.equal(intent.kind, 'attack');
@@ -284,7 +335,7 @@ test('a legal Light miss earns charge when its direction parries the arriving ga
     const response = act(s, 'light', p(3, 2));
     assert(same(get(response, 11), p(3, 2))); assert.equal(response.player.hp, 3);
     assert.equal(response.player.attunement, Math.min(10, initialCharge + 2));
-    assert.equal(get(response, 11).guard, 5); assert.equal(get(response, 11).hp, 1);
+    assert.equal(get(response, 11).guard, 3); assert.equal(get(response, 11).hp, 1);
     assert.equal(response.log[0], `Parried L11. Light +${Math.min(2, 10 - initialCharge)} charge.`);
     assert.deepEqual(s, before);
   }
@@ -298,7 +349,7 @@ test('Light hit plus multiple parries shares one capped reward and deals no coun
     const response = act(s, 'light', p(3, 2));
     assert.equal(response.player.hp, 3);
     assert.equal(response.player.attunement, Math.min(10, initialCharge + 2));
-    assert.equal(get(response, 11).guard, 28); assert.equal(get(response, 12).guard, 30);
+    assert.equal(get(response, 11).guard, 18); assert.equal(get(response, 12).guard, 20);
     assert.equal(response.log[0], `Parried L11, L12. Light +${Math.min(2, 10 - initialCharge)} charge.`);
   }
 });
@@ -314,18 +365,20 @@ test('a missed Light earns no charge from an unprotected direction or an incomin
   }
 });
 
-test('Light protects its center-hit enemy identity even when a committed attack changes bearing', () => {
+test('Light protects every hit enemy identity even when committed attacks change bearing outside its arc', () => {
   // This directly exercises the identity guarantee, independently of how current planners choose movement.
   const center = incoming(11, p(3, 2));
-  center.intent!.destination = p(4, 2); center.intent!.movement = 'dash'; center.intent!.direction = 2;
+  center.intent!.destination = p(3, 1); center.intent!.movement = 'dash'; center.intent!.direction = 0;
   const side = incoming(12, p(2, 2));
   side.intent!.destination = p(2, 3); side.intent!.movement = 'dash'; side.intent!.direction = 4;
-  const hit = act(fixture({ enemies: [center, side] }), 'light', p(3, 2));
-  assert(same(get(hit, 11), p(4, 2))); assert(same(get(hit, 12), p(2, 3)));
-  assert.equal(hit.player.hp, 2);
-  assert.equal(get(hit, 11).guard, 28); assert.equal(get(hit, 12).guard, 29);
+  const otherSide = incoming(13, p(4, 2));
+  otherSide.intent!.destination = p(4, 3); otherSide.intent!.movement = 'dash'; otherSide.intent!.direction = 4;
+  const hit = act(fixture({ enemies: [center, side, otherSide] }), 'light', p(3, 2));
+  assert(same(get(hit, 11), p(3, 1))); assert(same(get(hit, 12), p(2, 3))); assert(same(get(hit, 13), p(4, 3)));
+  assert.equal(hit.player.hp, 3);
+  assert.equal(get(hit, 11).guard, 18); assert.equal(get(hit, 12).guard, 19); assert.equal(get(hit, 13).guard, 19);
   assert.equal(hit.player.attunement, 2);
-  assert.equal(hit.log[0], 'Parried S11. Hit by S12. Light +2 charge.');
+  assert.equal(hit.log[0], 'Parried S11, S12, S13. Light +2 charge.');
 });
 
 test('Light identity protection cannot parry Heavy and fatal reports retain source IDs', () => {
@@ -350,7 +403,7 @@ test('a Light breach interrupts Heavy and skips this immediate enemy resolution'
   const hit = act(fixture({ enemies: [e] }), 'light', p(3, 2));
   assert.equal(hit.player.hp, PLAYER_MAX_HP);
   assert.equal(get(hit, 1).hp, 3);
-  assert.equal(get(hit, 1).guard, 50);
+  assert.equal(get(hit, 1).guard, 0); assert(get(hit, 1).breached); assert.equal(get(hit, 1).intent, null);
   assert.equal(get(hit, 1).stun, 0);
   assert(hit.log.some(message => message.includes('breached')));
 });

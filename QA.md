@@ -1,5 +1,12 @@
 # Verification
 
+## Version 0.7 — 25 October 2026
+
+- All 99 checks pass (83 combat, 16 persistence), along with the production typecheck/build. Light covers its full three-direction arc in all eight headings, retains protection for every hit normal enemy after movement, and skips this response's Guard regeneration for hit or successfully parried enemies. Heavy attacks still require Deflect; a Light hit still suppresses their Guard regeneration.
+- WebKit iPad touch playtest: three adjacent basic enemies at C3/D3/E3 attack the player on D4. Light aimed at D3 parries all three, leaves player HP at 3, awards 2 charge total, and leaves Guard at 4/5, 3/5, and 4/5 respectively. Reload preserves those values. Deflect on the next response blocks all three and restores their ordinary regeneration to 5/5. Visually reviewed targeting text, three-tile preview, Guard bars, and the source-specific response log.
+- A Light breach remains exposed at Guard 0 after stun counts down. Freeze, reload, and Resume preserve that state without advancing time. A later Dash response restores its armor. Regression coverage also checks renewed Light holding the breach, parry-only regeneration suppression, unaffected enemies, no extra counter damage, and the once-per-action charge cap.
+- No page errors or horizontal overflow occurred at 1194×834. Save schema remains version 7 because suppression resolves within the same atomic enemy response and adds no persistent fields. Full-run balance and physical iPad testing remain unverified.
+
 ## Version 0.6.2 — 25 October 2026
 
 - Jump arrows always lift toward screen-up, with a small horizontal bow for vertical jumps and a shallower curve near the top edge. Source and landing markers retain their roles. Combat and persistence are unchanged.

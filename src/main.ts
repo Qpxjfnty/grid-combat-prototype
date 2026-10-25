@@ -15,7 +15,7 @@ const HEAVY_STEPS = ['Jump', 'Sweep', 'Impact', 'Recovery'] as const;
 const heavyStep = (enemy: Enemy) => enemy.intent?.comboStep ?? enemy.comboStep;
 const descriptions: Record<Ability, string> = {
   dash: 'Choose an empty tile along a clear row, column, or diagonal. No charge cost or gain.',
-  light: 'Choose the center tile: 2 Guard there, 1 to each side. +2 charge on a hit or parry. Parries the center enemy and center direction; never Heavy.',
+  light: 'Choose the center tile: 2 Guard there, 1 to each side. Parries all three directions and every hit enemy even after movement; never Heavy. Hits or parries grant +2 charge once and skip that enemy\'s Guard recovery this response.',
   deflect: 'Spend 1 charge. Choose a five-tile arc to block attacks, including Heavy.',
   dashAttack: 'Spend 1 charge. Dash, then hit the three tiles ahead for 5 Guard. Exposed cores lose 1 HP.',
 };
@@ -45,12 +45,12 @@ root.innerHTML = `
       <details><summary>Controls & rules</summary><div class="board-options"><label><input type="checkbox" id="threats" checked> Enemy plans</label><label id="pulse-option"><input type="checkbox" id="pulse-preview"> Pulse reach</label></div><div class="rules">
         <p><strong>Each turn:</strong> choose Dash, Light attack, or Deflect. Select a target and confirm. Enemies respond immediately after that one action. Inspection and targeting are free.</p>
         <p><strong>Dash:</strong> move along a clear row, column, or diagonal to an empty tile. No charge cost or gain. Only walls and active enemies on the crossed tiles block movement; neighboring tiles do not block a diagonal.</p>
-        <p><strong>Light attack:</strong> select the center of three consecutive neighboring tiles. The double outline marks the center. Deal ${GUARD.lightCenter} Guard damage there and ${GUARD.lightSide} to each side. Gain 2 charge once if you hit or successfully parry an enemy, capped at ${MAX_ATTUNEMENT}. The center enemy's non-Heavy attack is parried during this response even if it moves. Incoming non-Heavy attacks from the center direction are also parried. Side hits do not gain that enemy-specific protection. Heavy attacks cannot be parried. A parry preserves the Light attack's damage and adds no extra damage.</p>
+        <p><strong>Light attack:</strong> select the center of three consecutive neighboring tiles. The double outline marks the center. Deal ${GUARD.lightCenter} Guard damage there and ${GUARD.lightSide} to each side. Gain 2 charge once if you hit or successfully parry an enemy, capped at ${MAX_ATTUNEMENT}. Parries incoming non-Heavy attacks from all three directions. Every enemy hit anywhere in the arc also has its non-Heavy attack parried during this response, even if it moves. Heavy attacks cannot be parried. Each enemy hit or successfully parried skips its Guard regeneration and breach recovery for this response; this does not stack. Its next response without another Light hit or parry resumes recovery. A parry adds no extra damage.</p>
         <p><strong>Deflect:</strong> costs 1 charge. Select the center of five consecutive neighboring tiles. Blocks attacks from all five directions, including Heavy. For the final Heavy blast, face its impact marker; if standing on the impact, face the Heavy. Deals no damage and gains no charge.</p>
         <p><strong>Freeze time:</strong> available at ${THRESHOLD}+ charge. All banked charge becomes the frozen-time budget, and a pulse fires once. Ending the freeze discards unused charge. Enemies do not move, attack, recover, or regenerate during frozen time.</p>
         <p><strong>Pulse:</strong> radial line of sight, ${GUARD.pulse} Guard damage. Pink openings breach instantly. Walls and enemies whose Guard survives cast shadows; breached enemies let the pulse pass through. The reach preview shows the exact resulting visibility, including enemies the pulse will breach.</p>
         <p><strong>Dash attack:</strong> the only frozen-time ability. Costs 1 charge. Dash to an empty tile, then hit the three adjacent tiles facing the direction you dashed for ${GUARD.dashAttack} Guard each. The attack always faces forward; it cannot be aimed separately. Hitting an already-breached enemy instead removes 1 HP. A surviving core-hit enemy restores Guard and leaves combat until time resumes. Newly breaching Guard does not damage HP on that same hit.</p>
-        <p><strong>Armor:</strong> Guard protects all HP. The bar shows remaining integer Guard. Red dots beneath its right end show HP; empty dots are lost HP. A breach interrupts and stuns through the next enemy resolution. Unbreached Guard regenerates by ${GUARD.regen} per resolution. Breached Guard restores after the stun. No regeneration or enemy movement occurs during an attack turn.</p>
+        <p><strong>Armor:</strong> Guard protects all HP. The bar shows remaining integer Guard. Red dots beneath its right end show HP; empty dots are lost HP. A breach interrupts and stuns through the next enemy resolution. Unbreached Guard regenerates by ${GUARD.regen} per resolution. Breached Guard restores after the stun. A Light hit or successful parry skips that enemy's regeneration and breach recovery for that response, including for a Heavy hit by Light. No regeneration or enemy movement occurs during an attack turn.</p>
         <p><strong>Enemy plans:</strong> straight dashed arrows show ground moves; curved dashed arrows show jumps. Solid arrows show attacks. The final Heavy blast starts at its diamond impact marker, one tile from its landing position. Matching IDs identify the source; ! marks Heavy attacks. Hover or tap to emphasize related plans. Plans are hidden while time is frozen.</p>
         <p><strong>Gap closers:</strong> Lunge and Sweep dash along clear paths. Moving Lunge, Sweep, and Heavy sweep/impact attacks face their actual movement direction. Enemies commit an attack only if it can reach your current tile; otherwise they approach or wait without attacking. Once shown, the current destination and attack tiles stay fixed, so you can dodge. A blocked landing cancels the move and attack.</p>
         <p><strong>Heavy combo:</strong> its small 1/4–4/4 marker shows the current step. Each step uses one normal enemy response; the next step aims again when it is planned. Freeze pauses the combo, and a breach interrupts it and resets it to 1/4. All Heavy attacks pass through walls and other enemies.</p>
@@ -170,7 +170,7 @@ function unitVitals(e: Enemy): string {
 function inspection(e: Enemy) {
   if (e.removed) return `Guard restored. Removed for this attack turn; returns when it ends.${e.kind === 'heavy' ? ' Combo restarts at 1/4.' : ''}`;
   let text = '';
-  if (e.breached) text += `BREACHED: core exposed, intention interrupted. Stunned through the next enemy resolution.${e.kind === 'heavy' ? ' Combo reset to 1/4.' : ''}`;
+  if (e.breached) text += `BREACHED: core exposed, intention interrupted. Recovery waits for an enemy response without a Light hit or parry.${e.kind === 'heavy' ? ' Combo reset to 1/4.' : ''}`;
   else {
     if (e.kind === 'heavy') text += `${heavyStep(e) + 1}/4 · ${HEAVY_STEPS[heavyStep(e)]}. `;
     if (e.opening) text += 'OPENING: pulse breaches instantly. ';
@@ -245,10 +245,11 @@ function render() {
   else if (selectedAbility) {
     instruction = target ? `${names[selectedAbility]} → ${coordinate(target)}.${selectedAbility === 'dashAttack' ? ' Gold tiles show the attack after landing.' : ''}` : descriptions[selectedAbility];
     if (selectedAbility === 'light' && target) {
-      const centerEnemy = state.enemies.find(e => !e.removed && e.hp > 0 && eq(e, target!));
-      instruction = `Center ${coordinate(target)}: ${GUARD.lightCenter} Guard. Sides: ${GUARD.lightSide}. `;
-      if (centerEnemy) instruction += centerEnemy.kind === 'heavy' ? `H${centerEnemy.id} is Heavy: cannot parry it.` : `${centerEnemy.kind[0].toUpperCase()}${centerEnemy.id}'s attack is parried even if it moves. Center direction is also covered.`;
-      else instruction += 'Parries non-Heavy attacks from the center direction.';
+      const tiles = previewAction(state, 'light', target);
+      const protectedIds = state.enemies.filter(e => !e.removed && e.hp > 0 && e.kind !== 'heavy' && tiles.some(p => eq(p, e))).map(e => `${e.kind[0].toUpperCase()}${e.id}`);
+      instruction = `Center ${coordinate(target)}: ${GUARD.lightCenter} Guard; sides: ${GUARD.lightSide}. Parries all three directions; never Heavy. `;
+      if (protectedIds.length) instruction += `${protectedIds.join(', ')} stay parried even if they move. `;
+      instruction += 'Hits or parries skip Guard recovery this response.';
     }
   }
   else if (state.phase === 'normal') instruction = 'One action, then enemies respond.';

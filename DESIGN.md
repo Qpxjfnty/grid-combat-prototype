@@ -1,4 +1,4 @@
-# Combat prototype rules, version 0.6.2
+# Combat prototype rules, version 0.7
 
 A fresh, placeholder-only combat prototype with a minimal interface. This version uses a 7 × 7 arena and one normal action per turn.
 
@@ -21,10 +21,12 @@ An attack arc consists of consecutive neighboring tiles around its origin. Light
 | Action | Effect | Charge rule |
 | --- | --- | --- |
 | Dash | Move along a clear queen line. No attack or defense is added. | No cost or gain |
-| Light Attack | Deal 2 Guard to the center neighbor and 1 Guard to each side neighbor. Parries the non-Heavy enemy hit on the center tile, retaining that protection if it moves during the response. Also parries normal incoming attacks from the center direction. | Gain 2 once if at least one enemy is hit or successfully parried, regardless of the number affected; bank cannot exceed 10 |
+| Light Attack | Deal 2 Guard to the center neighbor and 1 Guard to each side neighbor. Parries normal attacks from all three arc directions and from every enemy hit in the arc, retaining protection if those enemies move during the response. Every hit or successfully parried enemy skips Guard recovery for this response. | Gain 2 once if at least one enemy is hit or successfully parried, regardless of the number affected; bank cannot exceed 10 |
 | Deflect | Protect the selected direction and two neighboring directions on each side: five directions in total. Blocks all incoming attacks from those directions, including Heavy. | Spend 1 banked charge; unavailable at zero |
 
-Light Attack never directly damages HP, including when it hits an already-breached enemy. A swing that misses still earns charge if it successfully parries an enemy during the response. A miss with no successful parry gives no charge. Hitting and parrying during the same action earns only 2 total, subject to the cap. Its parry deals no extra Guard or HP damage. The response names the enemies parried, deflected, and hit by; a successful parry does not prevent an uncovered attacker from dealing damage. Deflect deals no damage and generates no charge. Moving out of an attack’s marked footprint remains another way to avoid it.
+Light Attack never directly damages HP, including when it hits an already-breached enemy. A swing that misses still earns charge if it successfully parries an enemy during the response. A miss with no successful parry gives no charge. Hitting and parrying during the same action earns only 2 total, subject to the cap. Its parry deals no extra Guard or HP damage. A hit on Heavy also skips its Guard recovery, but cannot parry a Heavy attack; breaching still interrupts it. The response names the enemies parried, deflected, and hit by; a successful parry does not prevent an uncovered attacker from dealing damage. Deflect deals no damage and generates no charge. Moving out of an attack’s marked footprint remains another way to avoid it.
+
+Skipping Guard recovery is local to the immediate enemy response and never stacks into later turns. It prevents both ordinary regeneration and the restoration of breached armor. Stun still counts down; a breached enemy whose restoration was skipped stays breached at zero Guard until a later response without another hit or parry from Light. Repeated Light actions can renew the skip once per response. Freeze never consumes or advances an enemy response.
 
 The player starts with zero charge. The bank caps at 10, and Freeze requires a minimum of 3.
 
@@ -76,9 +78,9 @@ Each numbered step consumes one normal enemy response. The Heavy aims again at t
 3. **Burst:** stay or advance at most one tile, then strike an adjacent tile in the facing direction. That impact and eight straight rays extending three tiles from it form the attack. Walls and other units do not stop the rays. The Heavy’s body blocks its own ray, excluding its tile and everything beyond it on that ray. For Heavy D4 facing west, impact C4 produces the 19 blue tiles in the supplied diagram. Other enemies do not occlude this attack. Deflect uses the impact point as the incoming source, or the Heavy’s landing tile when the player stands on the impact itself.
 4. **Recovery:** stay in place for one response with no attack and no opening, then return to the jump step.
 
-An out-of-range sweep or burst becomes a one-tile approach or wait, without attack tiles, and spends that step. A blocked landing or a dodged attack also spends its committed step. The initial stage does not progress until a jump attack is committed. Breaching or hitting its core interrupts the combo and resets it to the jump stage; stun and frozen time do not advance it. Recovery is a full normal turn and still permits ordinary Guard regeneration.
+An out-of-range sweep or burst becomes a one-tile approach or wait, without attack tiles, and spends that step. A blocked landing or a dodged attack also spends its committed step. The initial stage does not progress until a jump attack is committed. Breaching or hitting its core interrupts the combo and resets it to the jump stage; stun and frozen time do not advance it. Recovery is a full normal turn and permits ordinary Guard regeneration unless Light skips it.
 
-Guard protects all HP. Breaching cancels the current intention and stuns the enemy through the next enemy response. At the end of that response, its Guard restores. Unbreached enemies regenerate **10 Guard per normal enemy response**, up to their maximum. Breaching itself never removes HP.
+Guard protects all HP. Breaching cancels the current intention and stuns the enemy through the next enemy response. At the end of that response, its Guard restores unless Light skips that recovery. Unbreached enemies regenerate **10 Guard per normal enemy response**, up to their maximum, except when hit or successfully parried by Light during that response. Breaching itself never removes HP.
 
 Openings follow enemy cycles and appear in bright pink. Breached enemies appear yellow. Core-hit survivors are shown as return markers until Freeze ends. Their Guard is a continuous depleting bar with integer current/max values. Red HP dots sit immediately beneath the bar’s right edge; hollow dark red dots indicate lost HP. The player also uses red HP dots.
 
@@ -112,6 +114,6 @@ The TypeScript simulation is independent of Phaser. The board uses canvas; text 
 
 The action timing, action set, charge rules, damage layers, fixed movement-facing Dash Attack, 3 player HP, and uniform 1 incoming damage define this revision. Existing regeneration of 10 Guard per response is retained as prototype tuning, along with healing, arena count, enemy density, and enemy cycle timing. These tuning values still need playtesting.
 
-Because regeneration exceeds Light Attack’s 1–2 Guard damage, Light Attack primarily builds charge and provides a narrow parry. Repeated normal attacks do not steadily wear down intact armor under the current tuning. An enemy already at sufficiently low Guard can still be breached by Light Attack. Whether this produces the intended rhythm between normal combat and Freeze is a balance question, not a verified result.
+Light now supports steady Guard damage while repeated hits connect, because those enemies skip regeneration. A response without renewed pressure lets them regenerate again. Its wider parry and the ability to keep a breached target exposed deliberately strengthen sustained basic attacks; the resulting balance between movement, normal combat, and Freeze remains a playtest question.
 
 Regression tests should cover one-action enemy timing, charge costs and gains, five-direction Deflect, radial pulse occlusion, direction-fixed Dash Attack, no HP spill on breach, temporary enemy removal, and separate save versions. Browser review should cover touch and keyboard confirmation, hover inspection, action colors, readable vitals, and orientation changes. Emulated mobile browser checks must be distinguished from testing on a physical iPad. This document specifies behavior and validation targets; it makes no claim that this revision has passed those checks.
