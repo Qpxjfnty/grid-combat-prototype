@@ -232,8 +232,8 @@ const westSweep: Point[] = [
   { x: 1, y: -1 }, { x: 1, y: 1 },
 ];
 
-export function heavyAttackTiles(state: GameState, origin: Point, direction: Direction, step: 0 | 1 | 2): { tiles: Point[]; impact?: Point } {
-  if (step === 0) return { tiles: DIRS.map(d => ({ x: origin.x + d.x, y: origin.y + d.y })).filter(point => wallClearLine(state, origin, point)) };
+export function heavyAttackTiles(_state: GameState, origin: Point, direction: Direction, step: 0 | 1 | 2): { tiles: Point[]; impact?: Point } {
+  if (step === 0) return { tiles: DIRS.map(d => ({ x: origin.x + d.x, y: origin.y + d.y })).filter(inside) };
   if (step === 1) {
     const turns = (direction - 6 + 8) % 8;
     const tiles = westSweep.map(point => {
@@ -241,17 +241,17 @@ export function heavyAttackTiles(state: GameState, origin: Point, direction: Dir
       const index = ring.findIndex(p => same(p, point));
       const rotated = ring[(index + turns * (ring.length / 8)) % ring.length];
       return { x: origin.x + rotated.x, y: origin.y + rotated.y };
-    }).filter(point => wallClearLine(state, origin, point));
+    }).filter(inside);
     return { tiles };
   }
   const forward = DIRS[direction];
   const impact = { x: origin.x + forward.x, y: origin.y + forward.y };
-  if (!wallClearLine(state, origin, impact)) return { tiles: [] };
+  if (!inside(impact)) return { tiles: [] };
   const tiles = [impact];
   for (const ray of DIRS) for (let reach = 1; reach <= 3; reach++) {
     const point = { x: impact.x + ray.x * reach, y: impact.y + ray.y * reach };
-    // The Heavy's own square stops its ray; it does not block neighboring diagonal rays.
-    if (same(point, origin) || !wallClearLine(state, impact, point)) break;
+    // Heavy attacks ignore terrain and units; only the attacker's body stops its own ray.
+    if (same(point, origin) || !inside(point)) break;
     tiles.push(point);
   }
   return { tiles, impact };
@@ -397,7 +397,7 @@ export function planEnemies(state: GameState, onlyIds?: ReadonlySet<number>): vo
   }
 }
 
-function resolveEnemies(state: GameState): void {
+function resolveEnemies(state: GameState, lightHit?: boolean): void {
   const recovering = new Set(state.enemies.filter(enemy => active(enemy) && (enemy.breached || enemy.stun > 0)).map(enemy => enemy.id));
   const hitBy: string[] = [], parried: string[] = [], deflected: string[] = [];
   for (const enemy of state.enemies) {
@@ -445,13 +445,18 @@ function resolveEnemies(state: GameState): void {
     }
     enemy.intent = null;
   }
+  // Hit and parry share one reward, including a parry after the initial swing missed.
+  const lightEarned = lightHit !== undefined && (lightHit || parried.length > 0);
+  const beforeCharge = state.player.attunement;
+  if (lightEarned) state.player.attunement = Math.min(MAX_ATTUNEMENT, beforeCharge + 2);
+  const lightGain = state.player.attunement - beforeCharge;
   state.defenses = [];
   state.pulse = null;
   state.round++;
   state.phase = 'normal';
   checkClear(state);
   const responses = [parried.length ? `Parried ${parried.join(', ')}.` : '', deflected.length ? `Deflected ${deflected.join(', ')}.` : '', hitBy.length ? `Hit by ${hitBy.join(', ')}.` : ''].filter(Boolean);
-  log(state, responses.join(' ') || 'No enemy hits.');
+  log(state, (responses.join(' ') || 'No enemy hits.') + (lightEarned ? ` Light +${lightGain} charge.` : ''));
   if (state.phase === 'normal') planEnemies(state);
 }
 
@@ -497,6 +502,7 @@ export function execute(state: GameState, command: Command): GameState {
   if (!target || !Number.isInteger(target.x) || !Number.isInteger(target.y) || !validTargets(state, ability).some(point => same(point, target))) return state;
   const next = structuredClone(state);
   const direction = directionTo(next.player, target);
+  let lightHit: boolean | undefined;
   if (ability === 'dash' || ability === 'dashAttack') {
     next.player.x = target.x;
     next.player.y = target.y;
@@ -522,12 +528,11 @@ export function execute(state: GameState, command: Command): GameState {
     const hits = next.enemies.filter(enemy => active(enemy) && tiles.some(point => same(point, enemy)));
     const centerEnemy = hits.find(enemy => same(enemy, target));
     for (const enemy of hits) damageGuard(next, enemy, same(enemy, target) ? GUARD.lightCenter : GUARD.lightSide);
-    const before = next.player.attunement;
-    if (hits.length > 0) next.player.attunement = Math.min(MAX_ATTUNEMENT, before + 2);
+    lightHit = hits.length > 0;
     next.defenses.push({ kind: 'light', direction, ...(centerEnemy ? { parryEnemyId: centerEnemy.id } : {}) });
-    log(next, `Light Attack: ${GUARD.lightCenter} center / ${GUARD.lightSide} side Guard; +${next.player.attunement - before} charge.`);
+    log(next, `Light Attack: ${GUARD.lightCenter} center / ${GUARD.lightSide} side Guard.`);
   }
-  if (state.phase === 'normal') resolveEnemies(next);
+  if (state.phase === 'normal') resolveEnemies(next, lightHit);
   else checkClear(next);
   return next;
 }

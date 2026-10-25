@@ -16,7 +16,7 @@ export interface GameState {
 }
 export type Command = { type: 'act'; ability: Ability; target?: Point } | { type: 'beginAttack' } | { type: 'endAttack' } | { type: 'nextRoom' };
 export const SIZE = 7;
-export const STATE_VERSION = 6;
+export const STATE_VERSION = 7;
 export const PLAYER_MAX_HP = 3;
 export const ENEMY_DAMAGE = 1;
 export const THRESHOLD = 3;

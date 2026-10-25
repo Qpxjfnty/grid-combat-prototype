@@ -158,6 +158,13 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
         for (const p of pulse.visibleTiles) this.tile(p, C.freeze, 0.065);
         for (const p of pulse.shadowTiles) this.tile(p, 0x000000, 0.4);
       }
+      // Heavy footprints pass through walls. Draw the wall first so the full
+      // threatened tile, attack branches, and impact marker stay visible on it.
+      for (const p of s.walls) {
+        this.tile(p, C.wall, 1, 5);
+        const c = coord(p);
+        this.layer.lineStyle(1, 0x79818a, 0.45).lineBetween(c.x - 13, c.y - 13, c.x + 13, c.y + 13).lineBetween(c.x + 13, c.y - 13, c.x - 13, c.y + 13);
+      }
       const active = s.enemies.filter(e => !e.removed && e.hp > 0);
       const highlighted = new Set(f.threatIds);
       const plans = s.phase === 'normal' ? active.filter(e => e.intent && !e.breached && (f.showThreats || highlighted.has(e.id))) : [];
@@ -173,11 +180,6 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
           if (!entry.enemies.some(e => e.id === enemy.id)) entry.enemies.push(enemy);
           sources.set(key, entry);
         }
-      }
-      for (const p of s.walls) {
-        this.tile(p, C.wall, 1, 5);
-        const c = coord(p);
-        this.layer.lineStyle(1, 0x79818a, 0.45).lineBetween(c.x - 13, c.y - 13, c.x + 13, c.y + 13).lineBetween(c.x + 13, c.y - 13, c.x - 13, c.y + 13);
       }
       for (const d of s.defenses) {
         const offsets = d.kind === 'deflect' ? [-2, -1, 0, 1, 2] : [0];

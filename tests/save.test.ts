@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createGame, execute, planEnemies } from '../src/engine';
+import { createGame, execute, heavyAttackTiles, planEnemies } from '../src/engine';
 import { PLAYER_MAX_HP, STATE_VERSION, type GameState } from '../src/model';
 import { parseSaveRecord } from '../src/save';
 
@@ -22,7 +22,7 @@ test('current 7x7 runs preserve progress and frozen time on reload', () => {
   const parsed = parseSaveRecord(record(frozen))!;
   assert.deepEqual(parsed.state, frozen);
   assert.equal(parsed.state.version, STATE_VERSION);
-  assert.equal(parsed.state.version, 6);
+  assert.equal(parsed.state.version, STATE_VERSION);
   assert.equal(parsed.state.phase, 'attack');
   assert.equal(parsed.state.charge, 4);
   assert.equal(parsed.state.round, 7);
@@ -40,7 +40,7 @@ test('compatible v3 saves clamp health to three while preserving injuries, death
     assert(parsed);
     assert.equal(parsed.schema, 1);
     assert.equal(parsed.token, 'test');
-    assert.equal(parsed.state.version, 6);
+    assert.equal(parsed.state.version, STATE_VERSION);
     assert.equal(parsed.state.player.hp, Math.min(hp, 3));
     assert.equal(parsed.state.player.maxHp, 3);
     assert.equal(parsed.state.phase, hp === 0 ? 'lost' : 'normal');
@@ -130,8 +130,8 @@ test('malformed legacy health is rejected before migration can clamp it into ran
 });
 
 test('previous 9x9 saves and unknown versions cannot leak into the current rules', () => {
-  for (const version of [1, 2, 7]) assert.equal(parseSaveRecord(record({ ...createGame(1), version, slot: 2, resumePhase: 'normal' })), null);
-  for (const version of [3, 4, 5, 6]) {
+  for (const version of [1, 2, 8]) assert.equal(parseSaveRecord(record({ ...createGame(1), version, slot: 2, resumePhase: 'normal' })), null);
+  for (const version of [3, 4, 5, 6, 7]) {
     const s = { ...createGame(1), version };
     s.player.x = 7;
     assert.equal(parseSaveRecord(record(s)), null);
@@ -152,7 +152,7 @@ test('new saves accept arbitrary integer Guard including 12 and 35', () => {
 
 test('malformed saves and charge above the cap are rejected safely', () => {
   for (const raw of [null, '', '{', '{}', record({version: 3, enemies: [null]})]) assert.equal(parseSaveRecord(raw), null);
-  for (const version of [3, 4, 5, 6]) {
+  for (const version of [3, 4, 5, 6, 7]) {
     const s = { ...createGame(8), version };
     s.player.attunement = 11;
     assert.equal(parseSaveRecord(record(s)), null);
@@ -161,7 +161,7 @@ test('malformed saves and charge above the cap are rejected safely', () => {
   }
 });
 
-test('v6 rejects missing or malformed movement and attack metadata', () => {
+test('current saves reject missing or malformed movement and attack metadata', () => {
   for (const fields of [
     { movement: undefined }, { movement: 'teleport' }, { direction: undefined },
     { direction: -1 }, { direction: 8 }, { direction: 1.5 }, { kind: 'unknown' },
@@ -190,7 +190,7 @@ test('v5 migration refreshes Heavy alone while preserving frozen ground commitme
     canceled.intent = null;
     const ground = original.enemies.find(e => e.kind === 'lunge')!;
     const parsed = parseSaveRecord(record(original))!.state;
-    assert.equal(parsed.version, 6);
+    assert.equal(parsed.version, STATE_VERSION);
     assert.equal(parsed.phase, phase);
     assert.equal(parsed.round, 12);
     assert.equal(parsed.charge, original.charge);
@@ -231,7 +231,47 @@ test('v5 frozen migration preserves ground corridors when replanning an earlier 
   assert.deepEqual({ x: resolved.enemies[1].x, y: resolved.enemies[1].y }, { x: 6, y: 6 }, 'preserved ground commitment still resolves');
 });
 
-test('v6 saves preserve each Heavy combo step, impact, recovery, and frozen commitment exactly', () => {
+test('v6 migration expands Heavy footprints while keeping aim, landing, combo, and frozen progress', () => {
+  for (const comboStep of [0, 1, 2] as const) for (const phase of ['normal', 'attack'] as const) {
+    const s = createGame(731);
+    s.round = 9; s.phase = phase; s.charge = phase === 'attack' ? 4 : 0;
+    s.player = { ...s.player, x: 2, y: 0, hp: 2, attunement: phase === 'normal' ? 4 : 0 };
+    s.walls = [{ x: 2, y: 2 }, { x: 1, y: 3 }];
+    const heavy = s.enemies.find(e => e.kind === 'heavy')!;
+    Object.assign(heavy, { x: 4, y: 3, comboStep, opening: comboStep === 0 });
+    const destination = { x: 3, y: 3 };
+    const full = heavyAttackTiles(s, destination, 6, comboStep);
+    heavy.intent = { destination, tiles: [full.tiles[0]], heavy: true, label: 'Saved Heavy attack', movement: comboStep === 0 ? 'jump' : 'dash', kind: 'attack', direction: 6, comboStep, ...(full.impact ? { impact: full.impact } : {}) };
+    // A former wall-clipped commitment carries only its visible tiles.
+    const original = { ...structuredClone(s), version: 6 };
+    const migrated = parseSaveRecord(record(original))!.state;
+    const expected = structuredClone(s);
+    expected.enemies.find(e => e.id === heavy.id)!.intent = { ...heavy.intent, ...full };
+    assert.deepEqual(migrated, expected, 'only the Heavy footprint and version may change');
+    assert(migrated.enemies.find(e => e.id === heavy.id)!.intent!.tiles.length > 1);
+    assert.deepEqual(parseSaveRecord(record(migrated))!.state, migrated, 'migration is one-time');
+  }
+});
+
+test('v6 migration preserves canceled, move-only, and recovery intentions', () => {
+  for (const mode of ['canceled', 'move', 'recovery'] as const) {
+    const s = createGame(731);
+    const heavy = s.enemies.find(e => e.kind === 'heavy')!;
+    heavy.comboStep = mode === 'recovery' ? 3 : 1;
+    heavy.opening = false;
+    heavy.intent = mode === 'canceled' ? null : { destination: mode === 'move' ? { x: 1, y: 1 } : { x: heavy.x, y: heavy.y }, tiles: [], heavy: true, label: mode, movement: mode === 'move' ? 'dash' : 'none', kind: mode === 'move' ? 'move' : 'wait', direction: 6, comboStep: heavy.comboStep };
+    const original = { ...structuredClone(s), version: 6 };
+    assert.deepEqual(parseSaveRecord(record(original))!.state, s);
+  }
+});
+
+test('v6 migration rejects malformed combo metadata before refreshing tiles', () => {
+  const s = { ...createGame(731), version: 6 };
+  Object.assign(s.enemies.find(e => e.kind === 'heavy')!, { comboStep: undefined });
+  assert.equal(parseSaveRecord(record(s)), null);
+});
+
+test('current saves preserve each Heavy combo step, impact, recovery, and frozen commitment exactly', () => {
   for (const comboStep of [0, 1, 2, 3] as const) {
     const s = createGame(731);
     s.walls = [];
@@ -249,7 +289,7 @@ test('v6 saves preserve each Heavy combo step, impact, recovery, and frozen comm
   }
 });
 
-test('v6 rejects invalid combo progression, impact, and parry target metadata', () => {
+test('current saves reject invalid combo progression, impact, and parry target metadata', () => {
   for (const comboStep of [-1, 4, 0.5, undefined]) {
     const s = createGame(731);
     Object.assign(s.enemies.find(e => e.kind === 'heavy')!, { comboStep });

@@ -1,5 +1,14 @@
 # Verification
 
+## Version 0.6.1 — 25 October 2026
+
+- All 96 checks pass (80 combat, 16 persistence), along with the production typecheck/build. Heavy footprint checks cover all three attack stages and eight headings, including walls, other units, board edges, self-blocked burst rays, and unchanged movement/landing restrictions.
+- Reproduced the charge omission with a legal Lunge: player D4, enemy D1 → D3, Light aimed at D3. The swing initially misses, then parries the arriving enemy. Charge previously stayed at 0; it now reaches 2 with HP remaining 3. A hit plus parry still grants only 2 total, multiple parries do not stack the reward, and a bank of 9 stops at 10. Response text shows the actual gain. Heavy attacks cannot earn parry charge.
+- WebKit iPad touch emulation confirms the gap-closer parry, adjacent hit plus parry, and 9 → 10 charge cap. Visually inspected the HUD and `Parried L11. Light +2 charge.` feedback. No page errors or horizontal overflow occurred at 1194×834.
+- A Heavy enclosed by walls at D4 can plan its west-facing burst with the impact on wall C4. The full 19-tile footprint reaches through walls and through L11 at C2 to C1; the rear ray through D4 remains absent. Touch Deflect blocks the blast from its impact direction. Visually reviewed threat tint, arrows, source IDs, and impact diamond over wall art.
+- Browser migration used the prior committed engine's wall-clipped burst: its 7 saved tiles expand to 19 while preserving step 3/4, landing D4, facing, round 9, HP, and frozen budget 4. Migration persists immediately to version 7; reload, an old-key write, and Resume do not retarget or advance the combo. Unit coverage also preserves canceled, move-only, and recovery plans.
+- Physical iPad testing and full-run balance remain unverified.
+
 ## Version 0.6 — 25 October 2026
 
 - All 89 checks pass (76 combat, 13 persistence), along with the production typecheck/build. New coverage includes Heavy combo progression, reaiming between steps, fixed current commitments, unlimited jumps, blocked landings, out-of-range approaches, recovery, breach/core resets, frozen time, impact-source Deflect, and source-specific response logs.

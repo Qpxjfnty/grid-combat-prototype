@@ -233,6 +233,7 @@ test('Light center parries a normal attack without extra counter damage', () => 
   const s = fixture({ enemies: [incoming(1, p(3, 2))] });
   const hit = act(s, 'light', p(3, 2));
   assert.equal(hit.player.hp, PLAYER_MAX_HP);
+  assert.equal(hit.player.attunement, 2);
   assert.equal(get(hit, 1).guard, 20 - 2 + 10);
   assert.deepEqual(hit.defenses, []);
 });
@@ -271,17 +272,46 @@ test('three unblocked incoming attacks are fatal and further hits never make HP 
   }
 });
 
-test('Light parry direction uses an attacker location after its gap closer', () => {
-  const e = incoming(1, p(0, 2));
-  e.intent!.destination = p(2, 2);
-  e.intent!.movement = 'dash';
-  e.intent!.direction = 2;
-  e.intent!.tiles = [p(3, 1), p(3, 2), p(3, 3)];
-  const hit = act(fixture({ enemies: [e] }), 'light', p(2, 2));
-  assert(same(get(hit, 1), p(2, 2)));
-  assert.equal(hit.player.hp, PLAYER_MAX_HP);
-  assert.equal(hit.player.attunement, 0);
-  assert.equal(get(hit, 1).guard, 30);
+test('a legal Light miss earns charge when its direction parries the arriving gap closer', () => {
+  for (const initialCharge of [0, 9, 10]) {
+    const s = bank(fixture({ enemies: [enemy(11, 3, 0, { kind: 'lunge', hp: 1, maxHp: 1, guard: 5, maxGuard: 5 })] }), initialCharge);
+    planEnemies(s);
+    const intent = get(s, 11).intent!;
+    assert.equal(intent.movement, 'dash'); assert.equal(intent.kind, 'attack');
+    assert.deepEqual(intent.destination, p(3, 2)); assert.deepEqual(points(intent.tiles), points([p(3, 3), p(3, 4)]));
+    assert(!previewAction(s, 'light', p(3, 2)).some(point => same(point, get(s, 11))));
+    const before = structuredClone(s);
+    const response = act(s, 'light', p(3, 2));
+    assert(same(get(response, 11), p(3, 2))); assert.equal(response.player.hp, 3);
+    assert.equal(response.player.attunement, Math.min(10, initialCharge + 2));
+    assert.equal(get(response, 11).guard, 5); assert.equal(get(response, 11).hp, 1);
+    assert.equal(response.log[0], `Parried L11. Light +${Math.min(2, 10 - initialCharge)} charge.`);
+    assert.deepEqual(s, before);
+  }
+});
+
+test('Light hit plus multiple parries shares one capped reward and deals no counter damage', () => {
+  for (const initialCharge of [0, 9, 10]) {
+    const s = bank(fixture({ enemies: [enemy(11, 3, 2, { kind: 'lunge', maxGuard: 50 }), enemy(12, 3, 1, { kind: 'lunge', maxGuard: 50 })] }), initialCharge);
+    planEnemies(s);
+    assert(s.enemies.every(e => e.intent?.kind === 'attack' && e.intent.tiles.some(point => same(point, s.player))));
+    const response = act(s, 'light', p(3, 2));
+    assert.equal(response.player.hp, 3);
+    assert.equal(response.player.attunement, Math.min(10, initialCharge + 2));
+    assert.equal(get(response, 11).guard, 28); assert.equal(get(response, 12).guard, 30);
+    assert.equal(response.log[0], `Parried L11, L12. Light +${Math.min(2, 10 - initialCharge)} charge.`);
+  }
+});
+
+test('a missed Light earns no charge from an unprotected direction or an incoming Heavy', () => {
+  for (const heavy of [false, true]) {
+    const s = fixture({ enemies: [enemy(11, 3, 0, { kind: heavy ? 'heavy' : 'lunge' })] });
+    planEnemies(s);
+    assert(get(s, 11).intent!.tiles.some(point => same(point, s.player)));
+    const response = act(s, 'light', heavy ? p(2, 2) : p(3, 4));
+    assert.equal(response.player.attunement, 0); assert.equal(response.player.hp, 2);
+    assert.equal(response.log[0], `Hit by ${heavy ? 'H' : 'L'}11.`);
+  }
 });
 
 test('Light protects its center-hit enemy identity even when a committed attack changes bearing', () => {
@@ -295,14 +325,14 @@ test('Light protects its center-hit enemy identity even when a committed attack 
   assert.equal(hit.player.hp, 2);
   assert.equal(get(hit, 11).guard, 28); assert.equal(get(hit, 12).guard, 29);
   assert.equal(hit.player.attunement, 2);
-  assert.equal(hit.log[0], 'Parried S11. Hit by S12.');
+  assert.equal(hit.log[0], 'Parried S11. Hit by S12. Light +2 charge.');
 });
 
 test('Light identity protection cannot parry Heavy and fatal reports retain source IDs', () => {
   const heavy = incoming(11, p(3, 2), true);
   heavy.intent!.destination = p(4, 2); heavy.intent!.movement = 'jump'; heavy.intent!.direction = 2;
   const hit = act(fixture({ enemies: [heavy] }), 'light', p(3, 2));
-  assert.equal(hit.player.hp, 2); assert.equal(hit.log[0], 'Hit by H11.');
+  assert.equal(hit.player.hp, 2); assert.equal(hit.log[0], 'Hit by H11. Light +2 charge.');
   const fatal = act(fixture({ enemies: [incoming(21, p(3, 2), true), incoming(22, p(2, 2)), incoming(23, p(4, 2))] }), 'light', p(3, 4));
   assert.equal(fatal.phase, 'lost'); assert.equal(fatal.player.hp, 0);
   assert.equal(fatal.log[0], 'Hit by H21, S22, S23.');
@@ -521,10 +551,39 @@ test('Heavy burst matches nineteen diagram tiles and its body stops only its own
   assert.deepEqual(burst.impact, p(2, 3)); assert.deepEqual(points(burst.tiles), points(expected));
   assert.equal(new Set(points(burst.tiles)).size, 19);
   assert(!burst.tiles.some(point => same(point, p(3, 3)) || same(point, p(4, 3))));
-  s.walls = [p(2, 1)];
-  const blocked = heavyAttackTiles(s, p(3, 3), 6, 2);
-  assert(!blocked.tiles.some(point => same(point, p(2, 1)) || same(point, p(2, 0))));
-  s.walls = [p(2, 3)]; assert.deepEqual(heavyAttackTiles(s, p(3, 3), 6, 2).tiles, []);
+  s.walls = [p(2, 1), p(2, 3), p(3, 2), p(3, 4)];
+  assert.deepEqual(heavyAttackTiles(s, p(3, 3), 6, 2), burst);
+});
+
+test('every Heavy footprint ignores walls and units in every heading, including walls on the impact', () => {
+  const clear = fixture();
+  const obstructed = fixture({ walls: [p(2, 3), p(2, 2), p(3, 2), p(4, 2), p(4, 3), p(4, 4), p(3, 4), p(2, 4), p(1, 3), p(2, 0)], enemies: [enemy(11, 2, 1), enemy(12, 4, 5)] });
+  for (const origin of [p(3, 3), p(0, 0), p(6, 6)]) for (const step of [0, 1, 2] as const) for (let direction = 0; direction < 8; direction++) {
+    const expected = heavyAttackTiles(clear, origin, direction as Direction, step);
+    assert.deepEqual(heavyAttackTiles(obstructed, origin, direction as Direction, step), expected);
+    assert(expected.tiles.every(inside)); assert(!expected.tiles.some(point => same(point, origin)));
+  }
+});
+
+test('Heavy plans and resolves attacks through walls while its landing remains legal', () => {
+  for (const step of [0, 1, 2] as const) {
+    const origin = step === 0 ? p(0, 0) : step === 1 ? p(1, 3) : p(3, 3);
+    const player = step === 2 ? p(2, 0) : p(3, 3);
+    const walls = step === 0 ? [p(2, 3), p(3, 2)] : DIRS.map(d => p(origin.x + d.x, origin.y + d.y));
+    const s = fixture({ walls, enemies: [enemy(11, origin.x, origin.y, { kind: 'heavy', comboStep: step })] });
+    Object.assign(s.player, player);
+    planEnemies(s);
+    const intent = structuredClone(get(s, 11).intent!);
+    assert.equal(intent.kind, 'attack'); assert(intent.tiles.some(point => same(point, player)));
+    assert(intent.tiles.some(point => walls.some(wall => same(wall, point))));
+    assert(!walls.some(wall => same(wall, intent.destination)));
+    if (step === 0) assert.deepEqual(intent.destination, p(2, 2));
+    else assert.equal(intent.movement, 'none');
+    if (step === 2) assert(walls.some(wall => same(wall, intent.impact!)));
+    const response = act(s, 'light', p(player.x + (step === 1 || step === 2 ? 1 : 0), player.y + (step === 0 ? 1 : 0)));
+    assert.equal(response.player.hp, 2); assert.equal(response.player.attunement, 0);
+    assert(same(get(response, 11), intent.destination));
+  }
 });
 
 test('Heavy entry jump has unlimited distance and bearing, eight neighbors, and the only combo opening', () => {
@@ -942,7 +1001,7 @@ function checkLayout(s: GameState) {
 
 test('all five arenas remain deterministic, connected, and collision-free in the smaller board', () => {
   for (let seed = 1; seed <= 48; seed++) {
-    let s = createGame(seed); assert.deepEqual(s, createGame(seed)); assert.equal(s.version, 6);
+    let s = createGame(seed); assert.deepEqual(s, createGame(seed)); assert.equal(s.version, STATE_VERSION);
     for (let room = 1; room <= TOTAL_ROOMS; room++) {
       checkLayout(s); assert(same(s.player, p(3, 3))); assert(s.walls.length >= 3 && s.walls.length <= 5);
       assert.equal(s.enemies.length, 3 + Math.floor((room - 1) / 2));
@@ -985,7 +1044,7 @@ function segmentTouchesWall(from: Point, to: Point, wall: Point): boolean {
   return entry <= exit;
 }
 
-test('every planned attack reaches the player with the actual travel heading and clear wall footprint', () => {
+test('every planned attack reaches the player with its legal movement and correct wall rule', () => {
   let attacks = 0, approaches = 0, jumps = 0;
   for (let seed = 1; seed <= 32; seed++) {
     for (const location of [p(0, 0), p(6, 0), p(0, 6), p(6, 6), p(3, 3), p(3, 5)]) for (const comboStep of [0, 1, 2, 3] as const) {
@@ -1020,8 +1079,9 @@ test('every planned attack reaches the player with the actual travel heading and
           assert(intent.label.endsWith('1 damage'));
           for (const point of intent.tiles) {
             assert(inside(point));
-            assert(!s.walls.some(wall => segmentTouchesWall(intent.impact ?? intent.destination, point, wall)), JSON.stringify({ enemy: e, point, walls: s.walls }));
+            if (e.kind !== 'heavy') assert(!s.walls.some(wall => segmentTouchesWall(intent.destination, point, wall)), JSON.stringify({ enemy: e, point, walls: s.walls }));
           }
+          if (e.kind === 'heavy' && e.comboStep !== 3) assert.deepEqual(points(intent.tiles), points(heavyAttackTiles(s, intent.destination, intent.direction, e.comboStep).tiles));
         } else if (intent.kind === 'move') {
           approaches++;
           assert(moving); assert.deepEqual(intent.tiles, []);

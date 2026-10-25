@@ -1,10 +1,10 @@
 import { MAX_ATTUNEMENT, PLAYER_MAX_HP, SIZE, STATE_VERSION, TOTAL_ROOMS, type Enemy, type GameState, type Intent, type Point } from './model';
-import { planEnemies } from './engine';
+import { heavyAttackTiles, planEnemies } from './engine';
 
 export type SaveRecord = { schema: 1; token: string; state: GameState };
 type LegacyIntent = Omit<Intent, 'movement' | 'kind' | 'direction' | 'comboStep' | 'impact'>;
 type CompatibleEnemy = Omit<Enemy, 'intent' | 'comboStep'> & { comboStep?: Enemy['comboStep']; intent: Intent | LegacyIntent | null };
-type CompatibleState = Omit<GameState, 'version' | 'enemies'> & { version: 3 | 4 | 5 | typeof STATE_VERSION; enemies: CompatibleEnemy[] };
+type CompatibleState = Omit<GameState, 'version' | 'enemies'> & { version: 3 | 4 | 5 | 6 | typeof STATE_VERSION; enemies: CompatibleEnemy[] };
 const isPoint = (v: unknown): v is Point => !!v && typeof v === 'object' && Number.isInteger((v as Point).x) && Number.isInteger((v as Point).y) && (v as Point).x >= 0 && (v as Point).x < SIZE && (v as Point).y >= 0 && (v as Point).y < SIZE;
 const integer = (v: unknown) => typeof v === 'number' && Number.isSafeInteger(v);
 const bounded = (v: number, max: number) => integer(v) && v >= 0 && v <= max;
@@ -16,8 +16,8 @@ function validIntent(enemy: CompatibleEnemy, version: CompatibleState['version']
   if (version < 5) return true;
   const i = intent as Intent;
   if (!['none', 'dash', 'jump'].includes(i.movement) || !bounded(i.direction, 7)) return false;
-  if (!(i.kind === 'attack' ? i.tiles.length > 0 : i.kind === 'move' ? i.tiles.length === 0 && i.movement !== 'none' : version === STATE_VERSION && i.kind === 'wait' && i.tiles.length === 0 && i.movement === 'none')) return false;
-  if (version !== STATE_VERSION) return true;
+  if (!(i.kind === 'attack' ? i.tiles.length > 0 : i.kind === 'move' ? i.tiles.length === 0 && i.movement !== 'none' : version >= 6 && i.kind === 'wait' && i.tiles.length === 0 && i.movement === 'none')) return false;
+  if (version < 6) return true;
   if (enemy.kind === 'heavy' ? i.comboStep !== enemy.comboStep : i.comboStep !== undefined) return false;
   if (i.impact !== undefined && (!isPoint(i.impact) || enemy.kind !== 'heavy' || i.comboStep !== 2 || i.kind !== 'attack')) return false;
   if (enemy.kind === 'heavy' && i.comboStep === 2 && i.kind === 'attack' && !isPoint(i.impact)) return false;
@@ -27,11 +27,11 @@ function validIntent(enemy: CompatibleEnemy, version: CompatibleState['version']
 function validSave(v: unknown): v is CompatibleState {
   if (!v || typeof v !== 'object') return false;
   const s = v as CompatibleState;
-  return (s.version === 3 || s.version === 4 || s.version === 5 || s.version === STATE_VERSION) && integer(s.seed) && integer(s.rng) && Number.isInteger(s.room) && s.room >= 1 && s.room <= TOTAL_ROOMS && Number.isInteger(s.round) && s.round >= 1
+  return (s.version === 3 || s.version === 4 || s.version === 5 || s.version === 6 || s.version === STATE_VERSION) && integer(s.seed) && integer(s.rng) && Number.isInteger(s.room) && s.room >= 1 && s.room <= TOTAL_ROOMS && Number.isInteger(s.round) && s.round >= 1
     && ['normal', 'attack', 'cleared', 'won', 'lost'].includes(s.phase)
     && isPoint(s.player) && bounded(s.player.hp, s.player.maxHp) && integer(s.player.maxHp) && s.player.maxHp > 0 && s.player.maxHp <= 100 && (s.version === 3 || s.player.maxHp === PLAYER_MAX_HP) && bounded(s.player.attunement, MAX_ATTUNEMENT) && bounded(s.charge, MAX_ATTUNEMENT)
     && Array.isArray(s.walls) && s.walls.length <= SIZE * SIZE && s.walls.every(isPoint)
-    && Array.isArray(s.enemies) && s.enemies.length <= 50 && s.enemies.every(e => isPoint(e) && Number.isInteger(e.id) && ['lunge', 'sweep', 'heavy'].includes(e.kind) && [e.hp, e.maxHp, e.guard, e.maxGuard, e.stun, e.cycle].every(integer) && bounded(e.hp, e.maxHp) && e.maxHp > 0 && e.maxHp <= 100 && bounded(e.guard, e.maxGuard) && e.maxGuard > 0 && e.maxGuard <= 10000 && [e.breached, e.removed, e.opening].every(x => typeof x === 'boolean') && (s.version !== STATE_VERSION || (bounded(e.comboStep!, 3) && (e.kind === 'heavy' || e.comboStep === 0))) && validIntent(e, s.version))
+    && Array.isArray(s.enemies) && s.enemies.length <= 50 && s.enemies.every(e => isPoint(e) && Number.isInteger(e.id) && ['lunge', 'sweep', 'heavy'].includes(e.kind) && [e.hp, e.maxHp, e.guard, e.maxGuard, e.stun, e.cycle].every(integer) && bounded(e.hp, e.maxHp) && e.maxHp > 0 && e.maxHp <= 100 && bounded(e.guard, e.maxGuard) && e.maxGuard > 0 && e.maxGuard <= 10000 && [e.breached, e.removed, e.opening].every(x => typeof x === 'boolean') && (s.version < 6 || (bounded(e.comboStep!, 3) && (e.kind === 'heavy' || e.comboStep === 0))) && validIntent(e, s.version))
     && Array.isArray(s.defenses) && s.defenses.every(d => ['light', 'deflect'].includes(d.kind) && Number.isInteger(d.direction) && d.direction >= 0 && d.direction < 8 && (d.parryEnemyId === undefined || integer(d.parryEnemyId)))
     && Array.isArray(s.log) && s.log.every(l => typeof l === 'string')
     && (s.pulse === null || (Array.isArray(s.pulse?.hitIds) && s.pulse.hitIds.every(integer) && Array.isArray(s.pulse.breachedIds) && s.pulse.breachedIds.every(integer) && Array.isArray(s.pulse.visibleTiles) && s.pulse.visibleTiles.every(isPoint) && Array.isArray(s.pulse.shadowTiles) && s.pulse.shadowTiles.every(isPoint)));
@@ -46,6 +46,19 @@ export function parseSaveRecord(raw: string | null): SaveRecord | null {
     if (!validSave(record.state)) return null;
     const source: CompatibleState = record.state;
     if (source.version === STATE_VERSION) return record as SaveRecord;
+    if (source.version === 6) {
+      const migrated: GameState = {
+        ...source, version: STATE_VERSION,
+        enemies: source.enemies.map(enemy => ({ ...enemy, comboStep: enemy.comboStep!, intent: enemy.intent as Intent | null })),
+      };
+      // Expand the existing Heavy footprint without retargeting or advancing its combo.
+      for (const enemy of migrated.enemies) {
+        if (enemy.kind === 'heavy' && enemy.comboStep < 3 && enemy.intent?.kind === 'attack') {
+          enemy.intent = { ...enemy.intent, ...heavyAttackTiles(migrated, enemy.intent.destination, enemy.intent.direction, enemy.comboStep as 0 | 1 | 2) };
+        }
+      }
+      return { schema: 1, token: record.token, state: migrated };
+    }
     const migrated: GameState = {
       ...source,
       version: STATE_VERSION,
