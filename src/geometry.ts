@@ -83,7 +83,7 @@ export function pulse(state: GameState, apply = false): PulseResult {
       hit.add(enemy.id); hitIds.push(enemy.id);
       enemy.guard = enemy.opening ? 0 : Math.max(0, enemy.guard - GUARD.pulse);
       if (enemy.guard === 0) {
-        enemy.breached = true; enemy.stun = 1; enemy.intent = null; enemy.opening = false;
+        enemy.breached = true; enemy.stun = 1; enemy.intent = null; enemy.opening = false; enemy.comboStep = 0;
         breachedIds.push(enemy.id);
       }
     }

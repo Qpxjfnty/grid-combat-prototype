@@ -65,6 +65,8 @@ h1 { font-size: 17px; line-height: 1.2; font-weight: 600; margin: 0; }
 .guard-value { position: absolute; inset: 0; display: flex; justify-content: center; align-items: center; color: var(--text); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap; }
 .enemy-hp { display: flex; justify-content: flex-end; align-items: center; width: 100%; margin-top: 5px; }
 .enemy-hp.hp-dots { justify-content: flex-end; }
+.enemy-hp.has-combo { justify-content: space-between; }
+.combo-marker { color: var(--muted); font-size: 10px; line-height: 1; font-variant-numeric: tabular-nums; }
 .inspection .unit-vitals { margin: 5px 0 6px; }
 .play-layout { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 26px; align-items: start; }
 .board-column { min-width: 0; }
@@ -90,6 +92,7 @@ h2 { font-size: 17px; margin: 0; font-weight: 600; }
 .abilities button { flex: 1 0 90px; font-size: 14px; }
 .instruction { font-size: 13px; line-height: 1.55; color: #c2ccd8; margin: 12px 0; }
 .instruction:empty { display: none; }
+.instruction.light-center { color: var(--action-light); }
 .target-controls { display: flex; gap: 8px; margin-bottom: 12px; }
 .target-controls .primary { flex: 1; }
 .phase-controls:empty, .attack-controls:empty { display: none; }
@@ -104,6 +107,8 @@ details { min-width: 0; font-size: 13px; }
 summary { cursor: pointer; min-height: 46px; padding: 14px 2px; color: #c9d3df; touch-action: manipulation; }
 .rules p, .run-settings p { font-size: 12px; line-height: 1.65; color: var(--muted); margin: 8px 0 14px; }
 .rules strong { color: var(--text); font-weight: 600; }
+.combo-rules { margin: 8px 0 14px; padding-left: 20px; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.combo-rules li { margin-bottom: 7px; }
 .run-settings { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding-bottom: 10px; }
 .run-settings label { align-self: center; color: var(--muted); }
 .run-settings input { border: 1px solid var(--line); border-radius: 3px; background: var(--surface); padding: 10px; color: var(--text); min-width: 0; min-height: 46px; }

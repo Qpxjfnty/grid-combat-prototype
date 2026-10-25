@@ -1,11 +1,11 @@
-import { Ability, Command, COSTS, DIRS, Direction, Enemy, EnemyKind, ENEMY_DAMAGE, GameState, GUARD, MAX_ATTUNEMENT, PLAYER_MAX_HP, Point, SIZE, STATE_VERSION, THRESHOLD, TOTAL_ROOMS } from './model';
+import { Ability, ComboStep, Command, COSTS, DIRS, Direction, Enemy, EnemyKind, ENEMY_DAMAGE, GameState, GUARD, MAX_ATTUNEMENT, PLAYER_MAX_HP, Point, SIZE, STATE_VERSION, THRESHOLD, TOTAL_ROOMS } from './model';
 import { arc, clearPath, directionTo, distance, inside, pulse, same } from './geometry';
 
 const kinds: EnemyKind[] = ['lunge', 'sweep', 'heavy'];
 const attributes = {
   lunge: { guard: GUARD.lunge, hp: 1, reach: 3 },
   sweep: { guard: GUARD.sweep, hp: 2, reach: 2 },
-  heavy: { guard: GUARD.heavy, hp: 3, reach: 2 },
+  heavy: { guard: GUARD.heavy, hp: 3, reach: 1 },
 };
 const active = (enemy: Enemy) => enemy.hp > 0 && !enemy.removed;
 const isWall = (state: GameState, point: Point) => state.walls.some(wall => same(wall, point));
@@ -89,6 +89,7 @@ function populateRoom(state: GameState): void {
       removed: false,
       opening: false,
       cycle: 0,
+      comboStep: 0,
       intent: null,
     });
   }
@@ -153,6 +154,7 @@ function damageGuard(state: GameState, enemy: Enemy, amount: number): boolean {
   enemy.guard = Math.max(0, enemy.guard - amount);
   if (enemy.guard > 0) return false;
   enemy.breached = true;
+  enemy.comboStep = 0;
   enemy.stun = 1;
   enemy.intent = null;
   enemy.opening = false;
@@ -217,20 +219,51 @@ function wallClearLine(state: GameState, from: Point, to: Point): boolean {
   return true;
 }
 
+const outerRing: Point[] = [
+  { x: 0, y: -2 }, { x: 1, y: -2 }, { x: 2, y: -2 }, { x: 2, y: -1 },
+  { x: 2, y: 0 }, { x: 2, y: 1 }, { x: 2, y: 2 }, { x: 1, y: 2 },
+  { x: 0, y: 2 }, { x: -1, y: 2 }, { x: -2, y: 2 }, { x: -2, y: 1 },
+  { x: -2, y: 0 }, { x: -2, y: -1 }, { x: -2, y: -2 }, { x: -1, y: -2 },
+];
+const westSweep: Point[] = [
+  { x: -2, y: -1 }, { x: -2, y: 0 }, { x: -2, y: 1 },
+  { x: -1, y: -2 }, { x: -1, y: -1 }, { x: -1, y: 0 }, { x: -1, y: 1 }, { x: -1, y: 2 },
+  { x: 0, y: -2 }, { x: 0, y: -1 }, { x: 0, y: 1 }, { x: 0, y: 2 },
+  { x: 1, y: -1 }, { x: 1, y: 1 },
+];
+
+export function heavyAttackTiles(state: GameState, origin: Point, direction: Direction, step: 0 | 1 | 2): { tiles: Point[]; impact?: Point } {
+  if (step === 0) return { tiles: DIRS.map(d => ({ x: origin.x + d.x, y: origin.y + d.y })).filter(point => wallClearLine(state, origin, point)) };
+  if (step === 1) {
+    const turns = (direction - 6 + 8) % 8;
+    const tiles = westSweep.map(point => {
+      const ring = Math.max(Math.abs(point.x), Math.abs(point.y)) === 1 ? DIRS : outerRing;
+      const index = ring.findIndex(p => same(p, point));
+      const rotated = ring[(index + turns * (ring.length / 8)) % ring.length];
+      return { x: origin.x + rotated.x, y: origin.y + rotated.y };
+    }).filter(point => wallClearLine(state, origin, point));
+    return { tiles };
+  }
+  const forward = DIRS[direction];
+  const impact = { x: origin.x + forward.x, y: origin.y + forward.y };
+  if (!wallClearLine(state, origin, impact)) return { tiles: [] };
+  const tiles = [impact];
+  for (const ray of DIRS) for (let reach = 1; reach <= 3; reach++) {
+    const point = { x: impact.x + ray.x * reach, y: impact.y + ray.y * reach };
+    // The Heavy's own square stops its ray; it does not block neighboring diagonal rays.
+    if (same(point, origin) || !wallClearLine(state, impact, point)) break;
+    tiles.push(point);
+  }
+  return { tiles, impact };
+}
+
 function attackTiles(state: GameState, enemy: Enemy, destination: Point, direction: Direction): Point[] {
+  if (enemy.kind === 'heavy') return enemy.comboStep === 3 ? [] : heavyAttackTiles(state, destination, direction, enemy.comboStep).tiles;
   const forward = DIRS[direction];
   if (enemy.kind === 'lunge') {
     return [1, 2].map(step => ({ x: destination.x + forward.x * step, y: destination.y + forward.y * step })).filter(point => wallClearLine(state, destination, point));
   }
-  const near = arc(destination, direction).filter(point => wallClearLine(state, destination, point));
-  if (enemy.kind === 'sweep') return near;
-  const far = [-1, 0, 1].map(offset => {
-    const edge = DIRS[(direction + offset + 8) % 8];
-    return { x: destination.x + forward.x + edge.x, y: destination.y + forward.y + edge.y };
-  }).filter(point => wallClearLine(state, destination, point));
-  const unique = new Map<string, Point>();
-  for (const point of [...near, ...far]) unique.set(`${point.x},${point.y}`, point);
-  return [...unique.values()];
+  return arc(destination, direction).filter(point => wallClearLine(state, destination, point));
 }
 
 function queenLine(from: Point, to: Point): boolean {
@@ -251,7 +284,9 @@ function groundRouteClear(state: GameState, from: Point, to: Point, enemyId: num
 function approachDistances(state: GameState, enemy: Enemy, reserved: ReadonlySet<string>): Map<string, number> {
   const reach = attributes[enemy.kind].reach;
   const walkable = (point: Point) => inside(point) && !isWall(state, point) && !same(point, state.player) && !reserved.has(`${point.x},${point.y}`) && (!occupant(state, point) || occupant(state, point)!.id === enemy.id);
-  const queue = allTiles().filter(point => walkable(point) && attackTiles(state, enemy, point, directionTo(point, state.player)).some(tile => same(tile, state.player)));
+  const queue = allTiles().filter(point => walkable(point) && (enemy.kind === 'heavy' && enemy.comboStep === 2
+    ? DIRS.some((_, facing) => heavyAttackTiles(state, point, facing as Direction, 2).tiles.some(tile => same(tile, state.player)))
+    : attackTiles(state, enemy, point, directionTo(point, state.player)).some(tile => same(tile, state.player))));
   const routes = new Map(queue.map(point => [`${point.x},${point.y}`, 0]));
   // Reverse breadth-first search finds the number of legal moves to an actual firing position.
   for (let index = 0; index < queue.length; index++) {
@@ -261,7 +296,7 @@ function approachDistances(state: GameState, enemy: Enemy, reserved: ReadonlySet
       const candidate = { x: point.x + direction.x * step, y: point.y + direction.y * step };
       const key = `${candidate.x},${candidate.y}`;
       if (routes.has(key) || !walkable(candidate)) continue;
-      if (enemy.kind !== 'heavy' && !groundRouteClear(state, point, candidate, enemy.id, reserved)) continue;
+      if (!groundRouteClear(state, point, candidate, enemy.id, reserved)) continue;
       routes.set(key, nextDistance);
       queue.push(candidate);
     }
@@ -269,9 +304,52 @@ function approachDistances(state: GameState, enemy: Enemy, reserved: ReadonlySet
   return routes;
 }
 
+function planHeavy(state: GameState, enemy: Enemy, reserved: ReadonlySet<string>): void {
+  const step = enemy.comboStep;
+  const direction = directionTo(enemy, state.player);
+  enemy.opening = false;
+  const wait = () => {
+    enemy.intent = { destination: { x: enemy.x, y: enemy.y }, tiles: [], direction, movement: 'none', kind: 'wait', heavy: true, comboStep: step, label: step === 3 ? 'Heavy recovery' : 'Heavy wait' };
+  };
+  if (step === 3) { wait(); return; }
+  const destinations = allTiles().filter(point => !same(point, enemy) && !same(point, state.player) && empty(state, point) && !reserved.has(`${point.x},${point.y}`) && (step === 0 || (distance(enemy, point) === 1 && groundRouteClear(state, enemy, point, enemy.id, reserved))));
+  const origins = step === 0 ? destinations : [{ x: enemy.x, y: enemy.y }, ...destinations];
+  const attacks = origins.filter(point => !reserved.has(`${point.x},${point.y}`)).flatMap(point => {
+    const moving = !same(point, enemy);
+    const facings = !moving && step === 2 ? DIRS.map((_, index) => index as Direction) : [moving ? directionTo(enemy, point) : direction];
+    return facings.map(facing => ({ point, moving, direction: facing, aimDifference: Math.min((facing - direction + 8) % 8, (direction - facing + 8) % 8), ...heavyAttackTiles(state, point, facing, step) }));
+  }).filter(candidate => candidate.tiles.some(point => same(point, state.player)));
+  attacks.sort((a, b) => Number(b.moving) - Number(a.moving) || distance(a.point, state.player) - distance(b.point, state.player) || distance(enemy, a.point) - distance(enemy, b.point) || a.aimDifference - b.aimDifference || a.point.y - b.point.y || a.point.x - b.point.x);
+  const attack = attacks[0];
+  if (attack) {
+    enemy.intent = { destination: { ...attack.point }, tiles: attack.tiles, direction: attack.direction, movement: attack.moving ? step === 0 ? 'jump' : 'dash' : 'none', kind: 'attack', heavy: true, comboStep: step, ...(attack.impact ? { impact: attack.impact } : {}), label: `${step === 0 ? 'Jump heavy' : step === 1 ? 'Heavy sweep' : 'Heavy burst'} · ${ENEMY_DAMAGE} damage` };
+    enemy.opening = step === 0;
+    return;
+  }
+  const routes = step === 0 ? undefined : approachDistances(state, enemy, reserved);
+  const originRoute = routes?.get(`${enemy.x},${enemy.y}`);
+  const route = (point: Point) => routes?.get(`${point.x},${point.y}`) ?? Infinity;
+  const approaches = destinations.filter(point => originRoute === undefined ? distance(point, state.player) < distance(enemy, state.player) : route(point) < originRoute).sort((a, b) => (routes ? route(a) - route(b) : 0) || distance(a, state.player) - distance(b, state.player) || a.y - b.y || a.x - b.x);
+  const approach = approaches[0];
+  if (approach) enemy.intent = { destination: { ...approach }, tiles: [], direction: directionTo(enemy, approach), movement: step === 0 ? 'jump' : 'dash', kind: 'move', heavy: true, comboStep: step, label: step === 0 ? 'Jump approach' : 'Heavy approach' };
+  else wait();
+}
+
 export function planEnemies(state: GameState, onlyIds?: ReadonlySet<number>): void {
   if (state.phase === 'attack') return;
-  const reserved = new Set(state.enemies.filter(enemy => active(enemy) && enemy.intent && onlyIds && !onlyIds.has(enemy.id)).map(enemy => `${enemy.intent!.destination.x},${enemy.intent!.destination.y}`));
+  const reserved = new Set<string>();
+  if (onlyIds) for (const enemy of state.enemies) {
+    if (!active(enemy) || !enemy.intent || onlyIds.has(enemy.id)) continue;
+    const { destination, movement } = enemy.intent;
+    reserved.add(`${destination.x},${destination.y}`);
+    // Selective migration must preserve ground commitments, including their traversed squares.
+    if (movement === 'dash') {
+      const sx = Math.sign(destination.x - enemy.x), sy = Math.sign(destination.y - enemy.y);
+      for (let step = 1; step <= distance(enemy, destination); step++) {
+        reserved.add(`${enemy.x + sx * step},${enemy.y + sy * step}`);
+      }
+    }
+  }
   for (const enemy of state.enemies) {
     if (onlyIds && !onlyIds.has(enemy.id)) continue;
     if (!active(enemy) || enemy.breached || enemy.stun > 0) {
@@ -279,10 +357,16 @@ export function planEnemies(state: GameState, onlyIds?: ReadonlySet<number>): vo
       enemy.opening = false;
       continue;
     }
-    const movement = enemy.kind === 'heavy' ? 'jump' : 'dash';
+    if (enemy.kind === 'heavy') {
+      planHeavy(state, enemy, reserved);
+      if (enemy.intent) reserved.add(`${enemy.intent.destination.x},${enemy.intent.destination.y}`);
+      continue;
+    }
+    enemy.comboStep = 0;
+    const movement = 'dash';
     const reach = attributes[enemy.kind].reach;
-    enemy.opening = enemy.kind === 'sweep' ? enemy.cycle % 4 === 2 : enemy.cycle % 3 === (enemy.kind === 'heavy' ? 1 : 2);
-    const destinations = allTiles().filter(point => !same(point, state.player) && empty(state, point) && queenLine(enemy, point) && distance(enemy, point) <= reach && !reserved.has(`${point.x},${point.y}`) && (movement === 'jump' || groundRouteClear(state, enemy, point, enemy.id, reserved)));
+    enemy.opening = enemy.kind === 'sweep' ? enemy.cycle % 4 === 2 : enemy.cycle % 3 === 2;
+    const destinations = allTiles().filter(point => !same(point, state.player) && empty(state, point) && queenLine(enemy, point) && distance(enemy, point) <= reach && !reserved.has(`${point.x},${point.y}`) && groundRouteClear(state, enemy, point, enemy.id, reserved));
     const attacks = [{ x: enemy.x, y: enemy.y }, ...destinations].filter(point => !reserved.has(`${point.x},${point.y}`)).map(point => {
       const moving = !same(point, enemy);
       const direction = moving ? directionTo(enemy, point) : directionTo(enemy, state.player);
@@ -294,8 +378,8 @@ export function planEnemies(state: GameState, onlyIds?: ReadonlySet<number>): vo
     const attack = attacks[0];
     if (attack) {
       const motion = attack.moving ? movement : 'none';
-      const label = attack.moving ? `${movement === 'jump' ? 'Jump' : 'Dash'} ${enemy.kind}` : enemy.kind === 'lunge' ? 'Lunge' : enemy.kind === 'sweep' ? 'Sweep' : 'Heavy';
-      enemy.intent = { destination: { ...attack.point }, tiles: attack.tiles, direction: attack.direction, movement: motion, kind: 'attack', heavy: enemy.kind === 'heavy', label: `${label} · ${ENEMY_DAMAGE} damage` };
+      const label = attack.moving ? `Dash ${enemy.kind}` : enemy.kind === 'lunge' ? 'Lunge' : enemy.kind === 'sweep' ? 'Sweep' : 'Heavy';
+      enemy.intent = { destination: { ...attack.point }, tiles: attack.tiles, direction: attack.direction, movement: motion, kind: 'attack', heavy: false, label: `${label} · ${ENEMY_DAMAGE} damage` };
       reserved.add(`${attack.point.x},${attack.point.y}`);
       continue;
     }
@@ -305,7 +389,7 @@ export function planEnemies(state: GameState, onlyIds?: ReadonlySet<number>): vo
     const approaches = destinations.filter(point => originRoute === undefined ? distance(point, state.player) < distance(enemy, state.player) : route(point) < originRoute).sort((a, b) => route(a) - route(b) || distance(a, state.player) - distance(b, state.player) || distance(enemy, b) - distance(enemy, a) || a.y - b.y || a.x - b.x);
     const approach = approaches[0];
     if (approach) {
-      enemy.intent = { destination: { ...approach }, tiles: [], direction: directionTo(enemy, approach), movement, kind: 'move', heavy: enemy.kind === 'heavy', label: `${movement === 'jump' ? 'Jump' : 'Dash'} approach` };
+      enemy.intent = { destination: { ...approach }, tiles: [], direction: directionTo(enemy, approach), movement, kind: 'move', heavy: false, label: 'Dash approach' };
       reserved.add(`${approach.x},${approach.y}`);
     } else {
       enemy.intent = null;
@@ -315,11 +399,12 @@ export function planEnemies(state: GameState, onlyIds?: ReadonlySet<number>): vo
 
 function resolveEnemies(state: GameState): void {
   const recovering = new Set(state.enemies.filter(enemy => active(enemy) && (enemy.breached || enemy.stun > 0)).map(enemy => enemy.id));
-  let hits = 0;
-  let counters = 0;
+  const hitBy: string[] = [], parried: string[] = [], deflected: string[] = [];
   for (const enemy of state.enemies) {
     if (!active(enemy) || recovering.has(enemy.id) || !enemy.intent) continue;
     const intent = enemy.intent;
+    // A committed Heavy step is spent even if its fixed attack misses or its landing is blocked.
+    if (enemy.kind === 'heavy' && intent.comboStep !== undefined && (intent.comboStep !== 0 || intent.kind === 'attack')) enemy.comboStep = ((intent.comboStep + 1) % 4) as ComboStep;
     if (!same(enemy, intent.destination)) {
       // Never move an advertised attack to a new footprint when the planned landing tile is blocked.
       const landingBlocked = !empty(state, intent.destination) || same(intent.destination, state.player);
@@ -332,16 +417,19 @@ function resolveEnemies(state: GameState): void {
       enemy.y = intent.destination.y;
     }
     if (intent.kind !== 'attack' || !intent.tiles.some(point => same(point, state.player))) continue;
-    const approach = directionTo(state.player, enemy);
-    const countered = state.defenses.some(defense => {
+    const source = intent.impact && !same(intent.impact, state.player) ? intent.impact : enemy;
+    const approach = directionTo(state.player, source);
+    const deflection = state.defenses.some(defense => {
       const offset = (approach - defense.direction + 8) % 8;
-      return defense.kind === 'deflect' ? offset <= 2 || offset >= 6 : !intent.heavy && offset === 0;
+      return defense.kind === 'deflect' && (offset <= 2 || offset >= 6);
     });
-    if (countered) {
-      counters++;
-    } else {
+    const parry = !intent.heavy && state.defenses.some(defense => defense.kind === 'light' && (defense.direction === approach || defense.parryEnemyId === enemy.id));
+    const sourceId = `${enemy.kind === 'lunge' ? 'L' : enemy.kind === 'sweep' ? 'S' : 'H'}${enemy.id}`;
+    if (deflection) deflected.push(sourceId);
+    else if (parry) parried.push(sourceId);
+    else {
       state.player.hp = Math.max(0, state.player.hp - ENEMY_DAMAGE);
-      hits++;
+      hitBy.push(sourceId);
     }
   }
   for (const enemy of state.enemies.filter(active)) {
@@ -361,13 +449,15 @@ function resolveEnemies(state: GameState): void {
   state.pulse = null;
   state.round++;
   state.phase = 'normal';
-  log(state, `Enemies resolved. ${hits} hit${hits === 1 ? '' : 's'}, ${counters} block${counters === 1 ? '' : 's'}.`);
   checkClear(state);
+  const responses = [parried.length ? `Parried ${parried.join(', ')}.` : '', deflected.length ? `Deflected ${deflected.join(', ')}.` : '', hitBy.length ? `Hit by ${hitBy.join(', ')}.` : ''].filter(Boolean);
+  log(state, responses.join(' ') || 'No enemy hits.');
   if (state.phase === 'normal') planEnemies(state);
 }
 
 function hitCore(state: GameState, enemy: Enemy): void {
   enemy.hp = Math.max(0, enemy.hp - 1);
+  enemy.comboStep = 0;
   enemy.guard = enemy.maxGuard;
   enemy.breached = false;
   enemy.stun = 0;
@@ -430,10 +520,11 @@ export function execute(state: GameState, command: Command): GameState {
   } else {
     const tiles = attackArc(next, next.player, direction);
     const hits = next.enemies.filter(enemy => active(enemy) && tiles.some(point => same(point, enemy)));
+    const centerEnemy = hits.find(enemy => same(enemy, target));
     for (const enemy of hits) damageGuard(next, enemy, same(enemy, target) ? GUARD.lightCenter : GUARD.lightSide);
     const before = next.player.attunement;
     if (hits.length > 0) next.player.attunement = Math.min(MAX_ATTUNEMENT, before + 2);
-    next.defenses.push({ kind: 'light', direction });
+    next.defenses.push({ kind: 'light', direction, ...(centerEnemy ? { parryEnemyId: centerEnemy.id } : {}) });
     log(next, `Light Attack: ${GUARD.lightCenter} center / ${GUARD.lightSide} side Guard; +${next.player.attunement - before} charge.`);
   }
   if (state.phase === 'normal') resolveEnemies(next);

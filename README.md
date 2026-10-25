@@ -1,6 +1,6 @@
 # Grid combat prototype
 
-Version 0.5.2 is a minimal, touch-friendly combat prototype on a **7 × 7 grid**. It uses placeholder units, a TypeScript simulation, a Phaser board, and plain HTML controls. There is no setting or flavor.
+Version 0.6 is a minimal, touch-friendly combat prototype on a **7 × 7 grid**. It uses placeholder units, a TypeScript simulation, a Phaser board, and plain HTML controls. There is no setting or flavor.
 
 ## Play
 
@@ -9,7 +9,7 @@ Version 0.5.2 is a minimal, touch-friendly combat prototype on a **7 × 7 grid**
 | Normal action | Effect | Charge |
 | --- | --- | --- |
 | Dash | Move to an empty tile along a clear row, column, or diagonal. | No cost or gain |
-| Light Attack | Hit three adjacent tiles: 2 Guard on the center tile, 1 on each side. Its center direction also parries non-Heavy attacks during the response, without extra damage. | +2 once if it hits any enemy, capped at 10 |
+| Light Attack | Hit three adjacent tiles: 2 Guard on the center tile, 1 on each side. Parry the normal enemy hit on the center tile even if it moves; normal attacks arriving from the center direction are also parried. Heavy attacks require Deflect. | +2 once if it hits any enemy, capped at 10 |
 | Deflect | Block attacks from five adjacent directions, including Heavy. Deals no damage. | Costs 1; requires at least 1 |
 
 At **3 or more charge**, use **Freeze** before committing another normal action. All banked charge becomes the frozen attack budget, and a radial pulse hits visible enemies for 5 Guard. Pink openings breach instantly. Walls and surviving armor cast shadows; breached enemies let the pulse pass through.
@@ -24,13 +24,13 @@ Guard appears as a continuous bar with integer current/max values. Red dots bene
 
 Action colors match their targeting previews: muted green for Dash, light beige for Light Attack, sky blue for Deflect, pink for Freeze, and gold for Dash Attack. Bright pink enemy outlines mark openings; yellow marks breached armor.
 
-Straight dashed arrows show ground dashes; curved dashed arrows show jumps. Both connect each enemy to its planned landing tile. Solid arrows continue forward into its attack tiles. Matching enemy IDs identify the source, including when attacks overlap; ! marks Heavy attacks. Hover or tap an enemy or threatened tile to emphasize related plans. Plans are hidden during Freeze so the Dash Attack preview stays clear.
+Straight dashed arrows show ground dashes; curved dashed arrows show jumps. Both connect each enemy to its planned landing tile. Solid arrows continue forward into its attack tiles. The Heavy’s burst rays start at a marked impact tile. Matching enemy IDs identify the source, including when attacks overlap; ! marks Heavy attacks. Hover or tap an enemy or threatened tile to emphasize related plans. Plans are hidden during Freeze so the Dash Attack preview stays clear.
 
-Dashes check only the tiles they cross: neighboring enemies or walls do not block an open diagonal. Lunge and Sweep use the same ground-path rule. Heavy jumps over obstacles and units. Moving attacks always face the direction of travel. Enemies only plan an attack that reaches your current tile; otherwise they reposition without attacking. Their shown plans stay fixed, so moving out of the footprint makes them miss.
+Dashes check only the tiles they cross: neighboring enemies or walls do not block an open diagonal. Lunge and Sweep use the same ground-path rule. Heavy uses a four-turn combo: jump to an empty tile and hit all eight neighbors (pink opening), advance up to one tile into a wide sweep, advance up to one tile into an adjacent-impact burst, then recover. It aims again between steps; each displayed step stays fixed while you respond. The burst extends three tiles in eight directions from its impact, with walls and the Heavy itself blocking rays. Its small 1/4–4/4 marker and inspection text show progress. Moving attacks always face the direction of travel. Enemies only plan an attack that reaches your current tile; otherwise they reposition without attacking. Their shown plans stay fixed, so moving out of the footprint makes them miss.
 
-Hover or tap a tile to inspect its contents, enemy arrivals, and planned attacks. Hovering never changes your action target or advances time. Controls, detailed rules, and display options are collapsed under **Controls & rules**; seed and restart options are under **Run**.
+Light’s center tile has its own marker. Response text names which enemies were parried, deflected, or dealt damage. Hover or tap a tile to inspect its contents, enemy arrivals, and planned attacks. Hovering never changes your action target or advances time. Controls, detailed rules, and display options are collapsed under **Controls & rules**; seed and restart options are under **Run**.
 
-Runs save automatically in the current browser, including during Freeze. Existing version 3 and 4 runs retain progress, use the 3-HP cap, and refresh old intentions once for the new movement rules. Version 5 uses separate storage so older open tabs cannot overwrite the updated run. Older version 1 and 2 saves remain untouched and are not converted from their 9 × 9 rules.
+Runs save automatically in the current browser, including during Freeze. Existing version 3–5 runs retain progress and use the 3-HP cap. Heavy intentions refresh once for the combo; canceled intentions stay canceled. Version 5 Lunge/Sweep intentions remain fixed. Version 6 uses separate storage so older open tabs cannot overwrite the updated run, and reload preserves the exact combo step. Older version 1 and 2 saves remain untouched and are not converted from their 9 × 9 rules.
 
 ## Development
 

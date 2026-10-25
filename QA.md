@@ -1,5 +1,15 @@
 # Verification
 
+## Version 0.6 — 25 October 2026
+
+- All 89 checks pass (76 combat, 13 persistence), along with the production typecheck/build. New coverage includes Heavy combo progression, reaiming between steps, fixed current commitments, unlimited jumps, blocked landings, out-of-range approaches, recovery, breach/core resets, frozen time, impact-source Deflect, and source-specific response logs.
+- Compared all four Heavy steps with the supplied drawing: 8 landing neighbors, the exact 14-tile west-facing sweep, the example 19-tile blast, and an empty recovery footprint. The blast stops at the Heavy's body and walls. Rotated sweeps and indirect stationary blast aim are covered by tests. Screenshots of all four steps were visually reviewed.
+- The reported lone normal enemy bypassing a center hit was not reproduced in 624 legal adjacent Lunge/Sweep cases under the prior planner. Light now explicitly retains protection against the enemy actually hit on the center tile, as well as the existing center-direction parry. Regression tests distinguish side hits and Heavy attacks. WebKit iPad touch and Chrome keyboard checks confirm the center parry preserves 3 HP and earns 2 charge. With a second uncovered attacker, feedback reads `Parried L11. Hit by S12.` and HP falls by exactly 1. The center target has a stronger preview marker.
+- A touch-driven Heavy cycle resolves one enemy response per step, advances through 1/4–4/4, permits Deflect on each attack, and returns to Jump after recovery. Freeze, Dash Attack, reload, and Resume preserve an unbreached Heavy's exact commitment and combo step without advancing its round.
+- A frozen version-5 migration witness revealed a refreshed Heavy landing on F6 could block a preserved E5 → G7 ground dash. Migration now reserves the full preserved ground corridor. The regression and browser replay verify the dash reaches G7. Current saves persist immediately, reload exactly, and remain isolated from older-tab writes. Version 3–5 migration and invalid combo metadata are also covered.
+- Chrome hover inspection preserves the complete combat state and leaves keyboard targeting intact. Visually reviewed overlapping plans in a five-enemy board with two Heavy blasts, both unfocused and focused. Impact markers, source labels, combo progress, Guard bars, and HP dots remain visible. WebKit tablet layouts at 768×1024, 834×1194, and 1194×834 retain square tiles without horizontal overflow.
+- These are mechanic and interface checks. Full-run balance for the new Heavy combo remains unverified, and physical iPad testing has not been performed.
+
 ## Version 0.5.2 — 24 October 2026
 
 - All 70 combat/save checks and the production typecheck/build pass. The existing generation suite verifies D4 starts across 48 seeds × 5 arenas, with all eight adjacent tiles clear, 3–5 walls retained, connected floors, and no overlapping occupants.

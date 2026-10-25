@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { arc, clearPath, directionTo, distance, inside, pulse, same } from '../src/geometry';
-import { availableAbilities, canBeginAttack, createGame, execute, planEnemies, previewAction, validTargets } from '../src/engine';
+import { availableAbilities, canBeginAttack, createGame, execute, heavyAttackTiles, planEnemies, previewAction, validTargets } from '../src/engine';
 import { COSTS, DIRS, ENEMY_DAMAGE, GUARD, MAX_ATTUNEMENT, PLAYER_MAX_HP, SIZE, STATE_VERSION, THRESHOLD, TOTAL_ROOMS, type Ability, type Command, type Direction, type Enemy, type GameState, type Point } from '../src/model';
 
 const p = (x: number, y: number): Point => ({ x, y });
 const enemy = (id: number, x: number, y: number, fields: Partial<Enemy> = {}): Enemy => ({
   id, x, y, kind: 'sweep', hp: 3, maxHp: 3, guard: 20, maxGuard: 20,
-  breached: false, stun: 0, removed: false, opening: false, cycle: 0, intent: null, ...fields,
+  breached: false, stun: 0, removed: false, opening: false, cycle: 0, comboStep: 0, intent: null, ...fields,
 });
 const fixture = (fields: Partial<GameState> = {}): GameState => ({
   version: STATE_VERSION, seed: 123, rng: 123, room: 1, round: 1,
@@ -20,7 +20,7 @@ const points = (values: Point[]) => values.map(({ x, y }) => `${x},${y}`).sort()
 const get = (s: GameState, id: number) => s.enemies.find(e => e.id === id)!;
 const incoming = (id: number, origin: Point, heavy = false): Enemy => enemy(id, origin.x, origin.y, {
   kind: heavy ? 'heavy' : 'sweep', guard: 20, maxGuard: 50,
-  intent: { destination: origin, tiles: [p(3, 3)], heavy, label: 'test', movement: 'none', kind: 'attack', direction: directionTo(origin, p(3, 3)) },
+  intent: { destination: origin, tiles: [p(3, 3)], heavy, label: 'test', movement: 'none', kind: 'attack', direction: directionTo(origin, p(3, 3)), ...(heavy ? { comboStep: 0 as const } : {}) },
 });
 const bank = (s: GameState, value: number) => { s.player.attunement = value; return s; };
 
@@ -284,6 +284,37 @@ test('Light parry direction uses an attacker location after its gap closer', () 
   assert.equal(get(hit, 1).guard, 30);
 });
 
+test('Light protects its center-hit enemy identity even when a committed attack changes bearing', () => {
+  // This directly exercises the identity guarantee, independently of how current planners choose movement.
+  const center = incoming(11, p(3, 2));
+  center.intent!.destination = p(4, 2); center.intent!.movement = 'dash'; center.intent!.direction = 2;
+  const side = incoming(12, p(2, 2));
+  side.intent!.destination = p(2, 3); side.intent!.movement = 'dash'; side.intent!.direction = 4;
+  const hit = act(fixture({ enemies: [center, side] }), 'light', p(3, 2));
+  assert(same(get(hit, 11), p(4, 2))); assert(same(get(hit, 12), p(2, 3)));
+  assert.equal(hit.player.hp, 2);
+  assert.equal(get(hit, 11).guard, 28); assert.equal(get(hit, 12).guard, 29);
+  assert.equal(hit.player.attunement, 2);
+  assert.equal(hit.log[0], 'Parried S11. Hit by S12.');
+});
+
+test('Light identity protection cannot parry Heavy and fatal reports retain source IDs', () => {
+  const heavy = incoming(11, p(3, 2), true);
+  heavy.intent!.destination = p(4, 2); heavy.intent!.movement = 'jump'; heavy.intent!.direction = 2;
+  const hit = act(fixture({ enemies: [heavy] }), 'light', p(3, 2));
+  assert.equal(hit.player.hp, 2); assert.equal(hit.log[0], 'Hit by H11.');
+  const fatal = act(fixture({ enemies: [incoming(21, p(3, 2), true), incoming(22, p(2, 2)), incoming(23, p(4, 2))] }), 'light', p(3, 4));
+  assert.equal(fatal.phase, 'lost'); assert.equal(fatal.player.hp, 0);
+  assert.equal(fatal.log[0], 'Hit by H21, S22, S23.');
+});
+
+test('Deflect and miss reports name only the relevant response categories', () => {
+  const s = bank(fixture({ enemies: [incoming(11, p(3, 2), true), incoming(12, p(2, 2)), incoming(13, p(3, 4), true)] }), 1);
+  const response = act(s, 'deflect', p(3, 2));
+  assert.equal(response.log[0], 'Deflected H11, S12. Hit by H13.');
+  assert.equal(act(fixture(), 'light', p(3, 2)).log[0], 'No enemy hits.');
+});
+
 test('a Light breach interrupts Heavy and skips this immediate enemy resolution', () => {
   const e = incoming(1, p(3, 2), true); e.guard = 2;
   const hit = act(fixture({ enemies: [e] }), 'light', p(3, 2));
@@ -405,15 +436,16 @@ test('Heavy jumps cross walls and units while ground dashes cannot', () => {
   }
 });
 
-test('a Heavy jump can cross a dodging player without turning back to hit them', () => {
+test('a long Heavy jump can cross a dodging player while its fixed landing attack misses', () => {
   const s = fixture({ enemies: [enemy(1, 0, 0, { kind: 'heavy' })] });
+  s.player.x = 5; s.player.y = 5;
   planEnemies(s);
   const forecast = structuredClone(get(s, 1).intent!);
-  assert.equal(forecast.movement, 'jump'); assert(same(forecast.destination, p(2, 2)));
-  assert(forecast.tiles.some(point => same(point, p(3, 3))));
-  assert(!forecast.tiles.some(point => same(point, p(1, 1))));
-  const dodged = act(s, 'dash', p(1, 1));
-  assert(same(get(dodged, 1), p(2, 2)));
+  assert.equal(forecast.movement, 'jump'); assert(same(forecast.destination, p(4, 4)));
+  assert(forecast.tiles.some(point => same(point, p(5, 5))));
+  assert(!forecast.tiles.some(point => same(point, p(2, 2))));
+  const dodged = act(s, 'dash', p(2, 2));
+  assert(same(get(dodged, 1), p(4, 4)));
   assert.equal(dodged.player.hp, 3);
   assert.deepEqual(get(s, 1).intent, forecast);
 });
@@ -464,6 +496,175 @@ test('selective replanning preserves canceled and unselected intentions and resp
   const frozen = structuredClone(s);
   planEnemies(s); planEnemies(s, new Set(s.enemies.map(e => e.id)));
   assert.deepEqual(s, frozen);
+});
+
+test('Heavy sweep matches the fourteen-tile diagram and preserves its square rings in every heading', () => {
+  const s = fixture();
+  const origin = p(3, 3);
+  const offsets = [p(-2, -1), p(-2, 0), p(-2, 1), p(-1, -2), p(-1, -1), p(-1, 0), p(-1, 1), p(-1, 2), p(0, -2), p(0, -1), p(0, 1), p(0, 2), p(1, -1), p(1, 1)];
+  const expected = offsets.map(point => p(origin.x + point.x, origin.y + point.y));
+  assert.deepEqual(points(heavyAttackTiles(s, origin, 6, 1).tiles), points(expected));
+  for (let direction = 0; direction < 8; direction++) {
+    const tiles = heavyAttackTiles(s, origin, direction as Direction, 1).tiles;
+    assert.equal(tiles.length, 14); assert.equal(new Set(points(tiles)).size, 14);
+    assert.equal(tiles.filter(point => distance(point, origin) === 1).length, 7);
+    assert.equal(tiles.filter(point => distance(point, origin) === 2).length, 7);
+    const quarterTurn = tiles.map(point => p(6 - point.y, point.x));
+    assert.deepEqual(points(heavyAttackTiles(s, origin, ((direction + 2) % 8) as Direction, 1).tiles), points(quarterTurn));
+  }
+});
+
+test('Heavy burst matches nineteen diagram tiles and its body stops only its own ray', () => {
+  const s = fixture({ enemies: [enemy(99, 2, 1)] });
+  const burst = heavyAttackTiles(s, p(3, 3), 6, 2);
+  const expected = [p(2, 3), p(2, 2), p(2, 1), p(2, 0), p(3, 2), p(4, 1), p(5, 0), p(3, 4), p(4, 5), p(5, 6), p(2, 4), p(2, 5), p(2, 6), p(1, 4), p(0, 5), p(1, 3), p(0, 3), p(1, 2), p(0, 1)];
+  assert.deepEqual(burst.impact, p(2, 3)); assert.deepEqual(points(burst.tiles), points(expected));
+  assert.equal(new Set(points(burst.tiles)).size, 19);
+  assert(!burst.tiles.some(point => same(point, p(3, 3)) || same(point, p(4, 3))));
+  s.walls = [p(2, 1)];
+  const blocked = heavyAttackTiles(s, p(3, 3), 6, 2);
+  assert(!blocked.tiles.some(point => same(point, p(2, 1)) || same(point, p(2, 0))));
+  s.walls = [p(2, 3)]; assert.deepEqual(heavyAttackTiles(s, p(3, 3), 6, 2).tiles, []);
+});
+
+test('Heavy entry jump has unlimited distance and bearing, eight neighbors, and the only combo opening', () => {
+  const s = fixture({ enemies: [enemy(1, 0, 0, { kind: 'heavy' })] });
+  s.player.x = 5; s.player.y = 4;
+  planEnemies(s);
+  const e = get(s, 1), intent = e.intent!;
+  assert.equal(intent.kind, 'attack'); assert.equal(intent.movement, 'jump'); assert.equal(intent.comboStep, 0);
+  assert(same(intent.destination, p(4, 3)));
+  assert(distance(e, intent.destination) > 2);
+  assert(Math.abs(intent.destination.x - e.x) !== Math.abs(intent.destination.y - e.y));
+  assert.equal(intent.tiles.length, 8); assert(e.opening);
+  const before = structuredClone(s); planEnemies(s); assert.deepEqual(s, before);
+});
+
+test('Heavy consumes exactly one combo step per normal response including one full recovery response', () => {
+  let s = bank(fixture({ enemies: [enemy(1, 0, 0, { kind: 'heavy' })] }), 10);
+  planEnemies(s);
+  for (const step of [0, 1, 2, 3] as const) {
+    const e = get(s, 1), intent = e.intent!;
+    assert.equal(e.comboStep, step); assert.equal(intent.comboStep, step);
+    assert.equal(e.opening, step === 0);
+    if (step === 3) {
+      assert.equal(intent.kind, 'wait'); assert.equal(intent.movement, 'none'); assert.deepEqual(intent.tiles, []);
+    }
+    const source = intent.impact && !same(intent.impact, s.player) ? intent.impact : intent.destination;
+    const heading = directionTo(s.player, source), offset = DIRS[heading];
+    const beforeRound = s.round;
+    s = act(s, 'deflect', p(s.player.x + offset.x, s.player.y + offset.y));
+    assert.equal(s.round, beforeRound + 1); assert.equal(s.player.hp, 3);
+    assert.equal(get(s, 1).comboStep, (step + 1) % 4);
+  }
+  assert.equal(get(s, 1).intent!.comboStep, 0); assert(get(s, 1).opening);
+});
+
+test('Heavy reaims between combo steps while each committed step remains fixed after a dodge', () => {
+  let s = fixture({ enemies: [enemy(1, 0, 0, { kind: 'heavy' })] });
+  planEnemies(s);
+  const jump = structuredClone(get(s, 1).intent!);
+  s = act(s, 'dash', p(5, 3));
+  assert(same(get(s, 1), jump.destination)); assert.equal(s.player.hp, 3);
+  assert.equal(get(s, 1).comboStep, 1);
+  const sweep = structuredClone(get(s, 1).intent!);
+  assert.equal(sweep.kind, 'attack'); assert.equal(sweep.direction, 2);
+  assert(sweep.tiles.some(point => same(point, p(5, 3))));
+  s = act(s, 'dash', p(5, 0));
+  assert(same(get(s, 1), sweep.destination)); assert.equal(s.player.hp, 3);
+  assert.equal(get(s, 1).comboStep, 2);
+});
+
+test('blocked committed Heavy landings spend jump, sweep, and burst steps', () => {
+  for (const step of [0, 1, 2] as const) {
+    const s = fixture({ enemies: [enemy(1, 0, 0, { kind: 'heavy', comboStep: step })] });
+    planEnemies(s);
+    const intent = get(s, 1).intent!;
+    assert.equal(intent.kind, 'attack'); assert.notEqual(intent.movement, 'none');
+    s.walls.push({ ...intent.destination });
+    const response = act(s, 'light', p(3, 4));
+    assert(same(get(response, 1), p(0, 0))); assert.equal(response.player.hp, 3);
+    assert.equal(get(response, 1).comboStep, step + 1);
+  }
+});
+
+test('out-of-range sweep and burst approach or wait for one step without attacking', () => {
+  for (const step of [1, 2] as const) for (const blocked of [false, true]) {
+    const s = fixture({ enemies: [enemy(1, 0, 0, { kind: 'heavy', comboStep: step })], walls: blocked ? [p(1, 0), p(0, 1), p(1, 1)] : [] });
+    s.player.x = 6; s.player.y = 5;
+    planEnemies(s);
+    const intent = get(s, 1).intent!;
+    assert.equal(intent.kind, blocked ? 'wait' : 'move'); assert.deepEqual(intent.tiles, []);
+    assert(distance(get(s, 1), intent.destination) <= 1); assert(!get(s, 1).opening);
+    const response = act(s, 'light', p(6, 4));
+    assert.equal(response.player.hp, 3); assert.equal(get(response, 1).comboStep, step + 1);
+  }
+});
+
+test('entry approach and wait do not advance the combo or create an opening', () => {
+  let s = fixture({ walls: DIRS.map(d => p(3 + d.x, 3 + d.y)), enemies: [enemy(1, 0, 0, { kind: 'heavy' })] });
+  planEnemies(s);
+  assert.equal(get(s, 1).intent!.kind, 'move'); assert(!get(s, 1).opening);
+  s = act(s, 'light', p(3, 2));
+  assert.equal(get(s, 1).comboStep, 0); assert.equal(get(s, 1).intent!.kind, 'wait'); assert(!get(s, 1).opening);
+  s = act(s, 'light', p(3, 2)); assert.equal(get(s, 1).comboStep, 0);
+});
+
+test('stationary burst finds an indirect adjacent impact heading when direct rounded aim misses', () => {
+  const heavy = enemy(1, 1, 1, { kind: 'heavy', comboStep: 2 });
+  const blockers = DIRS.map((d, i) => enemy(i + 10, 1 + d.x, 1 + d.y, { breached: true, guard: 0, stun: 1 }));
+  const s = fixture({ enemies: [heavy, ...blockers] }); s.player.x = 3; s.player.y = 4;
+  assert(!heavyAttackTiles(s, heavy, 3, 2).tiles.some(point => same(point, s.player)));
+  planEnemies(s, new Set([1]));
+  const intent = get(s, 1).intent!;
+  assert.equal(intent.kind, 'attack'); assert.equal(intent.movement, 'none'); assert.equal(intent.direction, 4);
+  assert.deepEqual(intent.impact, p(1, 2)); assert(intent.tiles.some(point => same(point, s.player)));
+});
+
+test('burst Deflect uses impact bearing and falls back to the Heavy when standing on impact', () => {
+  for (const onImpact of [false, true]) {
+    const origin = onImpact ? p(4, 3) : p(2, 2);
+    const direction = onImpact ? 6 : 4;
+    const heavy = enemy(11, origin.x, origin.y, { kind: 'heavy', comboStep: 2 });
+    const s = bank(fixture({ enemies: [heavy] }), 1);
+    const burst = heavyAttackTiles(s, origin, direction, 2);
+    heavy.intent = { destination: origin, ...burst, heavy: true, label: 'Heavy burst · 1 damage', movement: 'none', kind: 'attack', direction, comboStep: 2 };
+    assert(burst.tiles.some(point => same(point, s.player)));
+    const target = onImpact ? p(4, 4) : p(3, 4);
+    const response = act(s, 'deflect', target);
+    assert.equal(response.player.hp, 3); assert.equal(response.log[0], 'Deflected H11.');
+  }
+});
+
+test('breach and core hits reset Heavy combos, including pulse-created breaches', () => {
+  const pulsed = fixture({ enemies: [enemy(1, 3, 1, { kind: 'heavy', comboStep: 2, guard: 5 })] });
+  planEnemies(pulsed); pulse(pulsed, true);
+  assert.equal(get(pulsed, 1).comboStep, 0); assert(get(pulsed, 1).breached); assert.equal(get(pulsed, 1).intent, null);
+  const normal = fixture({ enemies: [enemy(1, 3, 2, { kind: 'heavy', comboStep: 2, guard: 2 })] });
+  planEnemies(normal);
+  const light = act(normal, 'light', p(3, 2));
+  assert.equal(get(light, 1).comboStep, 0); assert.equal(light.player.hp, 3);
+  for (const breached of [false, true]) {
+    const s = fixture({ phase: 'attack', charge: 2, enemies: [enemy(1, 3, 1, { kind: 'heavy', comboStep: 2, guard: breached ? 0 : 5, breached, stun: breached ? 1 : 0 })] });
+    const hit = act(s, 'dashAttack', p(3, 2));
+    assert.equal(get(hit, 1).comboStep, 0); assert.equal(get(hit, 1).intent, null);
+    assert.equal(get(hit, 1).hp, breached ? 2 : 3);
+    assert.equal(get(hit, 1).removed, breached);
+  }
+});
+
+test('stun and frozen time never progress a Heavy combo', () => {
+  const stunned = fixture({ enemies: [enemy(1, 0, 0, { kind: 'heavy', comboStep: 1, stun: 1 })] });
+  planEnemies(stunned);
+  const normal = act(stunned, 'light', p(3, 2));
+  assert.equal(get(normal, 1).comboStep, 1); assert.equal(get(normal, 1).stun, 0);
+  const s = fixture({ enemies: [enemy(1, 0, 0, { kind: 'heavy', comboStep: 2 })] });
+  planEnemies(s); s.phase = 'attack'; s.charge = 2;
+  const before = structuredClone(s.enemies);
+  const moved = act(s, 'dashAttack', p(4, 3));
+  assert.deepEqual(moved.enemies, before);
+  planEnemies(moved); assert.deepEqual(moved.enemies, before);
+  const ended = execute(moved, { type: 'endAttack' }); assert.deepEqual(ended.enemies, before);
 });
 
 test('earlier planned landings cannot unexpectedly obstruct later advertised ground dashes', () => {
@@ -741,7 +942,7 @@ function checkLayout(s: GameState) {
 
 test('all five arenas remain deterministic, connected, and collision-free in the smaller board', () => {
   for (let seed = 1; seed <= 48; seed++) {
-    let s = createGame(seed); assert.deepEqual(s, createGame(seed)); assert.equal(s.version, 5);
+    let s = createGame(seed); assert.deepEqual(s, createGame(seed)); assert.equal(s.version, 6);
     for (let room = 1; room <= TOTAL_ROOMS; room++) {
       checkLayout(s); assert(same(s.player, p(3, 3))); assert(s.walls.length >= 3 && s.walls.length <= 5);
       assert.equal(s.enemies.length, 3 + Math.floor((room - 1) / 2));
@@ -786,21 +987,28 @@ function segmentTouchesWall(from: Point, to: Point, wall: Point): boolean {
 
 test('every planned attack reaches the player with the actual travel heading and clear wall footprint', () => {
   let attacks = 0, approaches = 0, jumps = 0;
-  for (let seed = 1; seed <= 64; seed++) {
-    for (const location of [p(0, 0), p(6, 0), p(0, 6), p(6, 6), p(3, 3), p(3, 5)]) {
+  for (let seed = 1; seed <= 32; seed++) {
+    for (const location of [p(0, 0), p(6, 0), p(0, 6), p(6, 6), p(3, 3), p(3, 5)]) for (const comboStep of [0, 1, 2, 3] as const) {
       const s = createGame(seed);
       if (s.walls.some(w => same(w, location)) || s.enemies.some(e => same(e, location))) continue;
       s.player.x = location.x; s.player.y = location.y;
+      for (const e of s.enemies) if (e.kind === 'heavy') e.comboStep = comboStep;
       planEnemies(s);
       for (const e of s.enemies) {
         const intent = e.intent; if (!intent) continue;
         const moving = !same(e, intent.destination);
-        assert.equal(intent.direction, moving ? directionTo(e, intent.destination) : directionTo(e, s.player));
+        if (moving || e.kind !== 'heavy' || e.comboStep !== 2 || intent.kind !== 'attack') assert.equal(intent.direction, moving ? directionTo(e, intent.destination) : directionTo(e, s.player));
+        if (e.kind === 'heavy') {
+          assert.equal(intent.comboStep, e.comboStep);
+          assert.equal(e.opening, e.comboStep === 0 && intent.kind === 'attack');
+        } else assert.equal(e.comboStep, 0);
         if (moving) {
           const dx = intent.destination.x - e.x, dy = intent.destination.y - e.y;
-          assert(dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy));
-          assert(distance(e, intent.destination) <= (e.kind === 'lunge' ? 3 : 2));
-          assert.equal(intent.movement, e.kind === 'heavy' ? 'jump' : 'dash');
+          if (e.kind !== 'heavy' || e.comboStep !== 0) {
+            assert(dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy));
+            assert(distance(e, intent.destination) <= (e.kind === 'lunge' ? 3 : e.kind === 'sweep' ? 2 : 1));
+          }
+          assert.equal(intent.movement, e.kind === 'heavy' && e.comboStep === 0 ? 'jump' : 'dash');
           assert(!same(intent.destination, s.player));
           assert(!s.enemies.some(other => other.id !== e.id && same(other, intent.destination)));
           if (intent.movement === 'dash') assert(clearPath(s, e, intent.destination, e.id));
@@ -812,12 +1020,14 @@ test('every planned attack reaches the player with the actual travel heading and
           assert(intent.label.endsWith('1 damage'));
           for (const point of intent.tiles) {
             assert(inside(point));
-            assert(!s.walls.some(wall => segmentTouchesWall(intent.destination, point, wall)), JSON.stringify({ enemy: e, point, walls: s.walls }));
+            assert(!s.walls.some(wall => segmentTouchesWall(intent.impact ?? intent.destination, point, wall)), JSON.stringify({ enemy: e, point, walls: s.walls }));
           }
-        } else {
+        } else if (intent.kind === 'move') {
           approaches++;
           assert(moving); assert.deepEqual(intent.tiles, []);
           assert(intent.label.endsWith('approach'));
+        } else {
+          assert.equal(e.kind, 'heavy'); assert(!moving); assert.deepEqual(intent.tiles, []);
         }
       }
     }

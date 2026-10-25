@@ -129,6 +129,17 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
       this.layer.lineStyle(0.7, color, alpha).strokeRect(center.x + x - 8.5, center.y + y - 4, 17, 8);
       this.text(center.x + x, center.y + y, enemyLabel(enemy), 7.5, colorText(color), 'bold').setAlpha(alpha);
     }
+    impactMarker(point: Point, color: number, alpha: number, occupied: boolean) {
+      const center = coord(point);
+      // Keep the impact visible beside an occupied tile without covering its HP.
+      const x = center.x - (occupied ? 24 : 0);
+      const y = center.y;
+      const radius = occupied ? 3.5 : 7;
+      this.layer.fillStyle(C.bg, 0.95).fillRect(x - radius, y - radius, radius * 2, radius * 2);
+      this.layer.lineStyle(1.5, color, alpha).lineBetween(x, y - radius, x + radius, y)
+        .lineBetween(x + radius, y, x, y + radius).lineBetween(x, y + radius, x - radius, y)
+        .lineBetween(x - radius, y, x, y - radius);
+    }
     redraw() {
       const f = getFrame();
       const s = f.state;
@@ -182,7 +193,8 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
         this.layer.fillStyle(actionColor, 0.9).fillCircle(c.x, c.y, 3);
       }
       for (const p of f.preview) {
-        this.tile(p, actionColor, 0.22, 2);
+        const lightCenter = f.ability === 'light' && f.target && eq(p, f.target);
+        this.tile(p, actionColor, f.ability === 'light' ? lightCenter ? 0.34 : 0.12 : 0.22, 2);
         this.outline(p, actionColor, 1, 3);
       }
       if (f.ability === 'dashAttack' && f.target) {
@@ -203,6 +215,7 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
       // Straight dashed paths are ground dashes; curved dashed paths are jumps.
       // Solid branches show only the committed attack footprint after landing.
       // They render beneath units and their vitals, including along crossing paths.
+      const impacts: { point: Point; color: number; alpha: number }[] = [];
       for (const enemy of plans) {
         const intent = enemy.intent!;
         const color = planColor(enemy);
@@ -213,9 +226,31 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
         if (moves && intent.movement === 'jump') this.jumpArrow(origin, landing, color, alpha, highlighted.has(enemy.id) ? 2 : 1.5);
         else if (moves && intent.movement === 'dash') this.arrow(origin, landing, color, alpha, true, 25, 15, highlighted.has(enemy.id) ? 2 : 1.5);
         if (intent.kind === 'attack') {
-          for (const point of intent.tiles) {
-            const occupied = eq(point, s.player) || active.some(e => eq(e, point));
-            this.arrow(landing, coord(point), color, alpha, false, moves ? 15 : 25, occupied ? 25 : 7, highlighted.has(enemy.id) ? 2 : 1.3);
+          if (intent.impact) {
+            const impact = intent.impact;
+            const center = coord(impact);
+            const occupied = eq(impact, s.player) || active.some(e => eq(e, impact));
+            this.arrow(landing, center, color, alpha, false, moves ? 15 : 25, occupied ? 25 : 8, highlighted.has(enemy.id) ? 2.3 : 1.7);
+            // One branch per ray keeps the full footprint readable without
+            // drawing a separate overlapping arrow to every tile along it.
+            const ends = new Map<string, Point>();
+            for (const point of intent.tiles) {
+              if (eq(point, impact)) continue;
+              const dx = point.x - impact.x, dy = point.y - impact.y;
+              const key = `${Math.sign(dx)},${Math.sign(dy)}`;
+              const previous = ends.get(key);
+              if (!previous || Math.max(Math.abs(dx), Math.abs(dy)) > Math.max(Math.abs(previous.x - impact.x), Math.abs(previous.y - impact.y))) ends.set(key, point);
+            }
+            for (const point of ends.values()) {
+              const endOccupied = eq(point, s.player) || active.some(e => eq(e, point));
+              this.arrow(center, coord(point), color, alpha, false, occupied ? 25 : 8, endOccupied ? 25 : 7, highlighted.has(enemy.id) ? 2 : 1.3);
+            }
+            impacts.push({ point: impact, color, alpha });
+          } else {
+            for (const point of intent.tiles) {
+              const occupied = eq(point, s.player) || active.some(e => eq(e, point));
+              this.arrow(landing, coord(point), color, alpha, false, moves ? 15 : 25, occupied ? 25 : 7, highlighted.has(enemy.id) ? 2 : 1.3);
+            }
           }
         }
         if (moves) {
@@ -241,6 +276,10 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
         const inRow = Math.min(columns, s.player.maxHp - Math.floor(n / columns) * columns);
         this.hpDot(player.x + ((n % columns) - (inRow - 1) / 2) * 7, player.y + 15 + Math.floor(n / columns) * 6.5, 2.5, n < s.player.hp);
       }
+      for (const impact of impacts) {
+        const occupied = eq(impact.point, s.player) || active.some(e => eq(e, impact.point)) || plans.some(e => eq(e.intent!.destination, impact.point));
+        this.impactMarker(impact.point, impact.color, impact.alpha, occupied);
+      }
       // Up to five full source IDs fit along the tile's edges, outside vitals and
       // central landing labels. Keep the order stable when individual plans fade.
       for (const { point, enemies } of sources.values()) {
@@ -265,6 +304,7 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
       if (f.cursor && !f.target) this.outline(f.cursor, actionColor, 1, 3);
       if (f.target) {
         this.outline(f.target, actionColor, 3, 3);
+        if (f.ability === 'light') this.outline(f.target, actionColor, 1.5, 7);
         const c = coord(f.target);
         this.layer.lineStyle(2, actionColor, 1).lineBetween(c.x - 8, c.y - 24, c.x + 8, c.y - 24);
       }
@@ -283,6 +323,10 @@ export function createBoard(host: HTMLElement, getFrame: () => BoardFrame, onTil
       this.layer.fillStyle(col, e.removed ? 0.3 : 0.46).fillRect(c.x - 20, c.y - 3, 40 * guardRatio, 12);
       this.layer.lineStyle(1, col, e.removed ? 0.5 : 0.7).strokeRect(c.x - 20, c.y - 3, 40, 12);
       this.text(c.x, c.y + 3, guardLabel, Math.min(12, 64 / guardLabel.length), color);
+      if (e.kind === 'heavy') {
+        const step = e.intent?.comboStep ?? e.comboStep;
+        this.text(c.x - 11.5, c.y + 15.5, `${step + 1}/4`, 7.5, e.opening ? '#ff4ed8' : C.muted);
+      }
       // Life sits immediately below the Guard bar, aligned to its right edge.
       for (let n = 0; n < e.maxHp; n++) this.hpDot(c.x + 17.5 - (e.maxHp - 1 - n) * 7, c.y + 16, 2.5, n < e.hp);
       if (!e.removed && pulse?.hitIds.includes(e.id)) this.layer.fillStyle(C.freeze, 1).fillCircle(c.x + 25, c.y - 25, 2.5);
