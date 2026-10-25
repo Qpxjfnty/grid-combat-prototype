@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { arc, clearPath, directionTo, distance, inside, pulse, same } from '../src/geometry';
 import { availableAbilities, canBeginAttack, createGame, execute, planEnemies, previewAction, validTargets } from '../src/engine';
-import { COSTS, DIRS, GUARD, MAX_ATTUNEMENT, SIZE, STATE_VERSION, THRESHOLD, TOTAL_ROOMS, type Ability, type Command, type Direction, type Enemy, type GameState, type Point } from '../src/model';
+import { COSTS, DIRS, ENEMY_DAMAGE, GUARD, MAX_ATTUNEMENT, PLAYER_MAX_HP, SIZE, STATE_VERSION, THRESHOLD, TOTAL_ROOMS, type Ability, type Command, type Direction, type Enemy, type GameState, type Point } from '../src/model';
 
 const p = (x: number, y: number): Point => ({ x, y });
 const enemy = (id: number, x: number, y: number, fields: Partial<Enemy> = {}): Enemy => ({
@@ -11,7 +11,7 @@ const enemy = (id: number, x: number, y: number, fields: Partial<Enemy> = {}): E
 });
 const fixture = (fields: Partial<GameState> = {}): GameState => ({
   version: STATE_VERSION, seed: 123, rng: 123, room: 1, round: 1,
-  phase: 'normal', player: { x: 3, y: 3, hp: 12, maxHp: 12, attunement: 0 },
+  phase: 'normal', player: { x: 3, y: 3, hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP, attunement: 0 },
   charge: 0, walls: [], enemies: [enemy(99, 0, 0)], defenses: [], log: [], pulse: null, ...fields,
 });
 const act = (s: GameState, ability: Ability, target?: Point) => execute(s, { type: 'act', ability, ...(target ? { target } : {}) });
@@ -81,7 +81,7 @@ test('normal Dash costs and generates no charge and immediately resolves enemy i
   assert(same(get(moved, 1), p(3, 1)));
   assert.equal(moved.round, 2);
   assert.equal(moved.phase, 'normal');
-  assert.equal(moved.player.hp, 11);
+  assert.equal(moved.player.hp, 2);
   assert.equal(moved.player.attunement, 4);
   assert.equal(get(moved, 1).cycle, 1);
   assert.deepEqual(s, before);
@@ -129,16 +129,42 @@ test('Light can charge from a breached enemy without harming its core', () => {
 test('Light center parries a normal attack without extra counter damage', () => {
   const s = fixture({ enemies: [incoming(1, p(3, 2))] });
   const hit = act(s, 'light', p(3, 2));
-  assert.equal(hit.player.hp, 12);
+  assert.equal(hit.player.hp, PLAYER_MAX_HP);
   assert.equal(get(hit, 1).guard, 20 - 2 + 10);
   assert.deepEqual(hit.defenses, []);
 });
 
 test('Light side direction does not parry and center never parries Heavy', () => {
-  for (const [origin, heavy, damage] of [[p(2, 2), false, 1], [p(3, 2), true, 2]] as const) {
+  for (const [origin, heavy, damage] of [[p(2, 2), false, 1], [p(3, 2), true, 1]] as const) {
     const s = fixture({ enemies: [incoming(1, origin, heavy)] });
     const hit = act(s, 'light', p(3, 2));
-    assert.equal(hit.player.hp, 12 - damage);
+    assert.equal(hit.player.hp, PLAYER_MAX_HP - damage);
+  }
+});
+
+test('every unblocked enemy hit costs exactly one of the player three HP', () => {
+  assert.equal(PLAYER_MAX_HP, 3);
+  assert.equal(ENEMY_DAMAGE, 1);
+  for (const kind of ['lunge', 'sweep', 'heavy'] as const) {
+    const e = incoming(1, p(3, 2), kind === 'heavy');
+    e.kind = kind;
+    const hit = act(fixture({ enemies: [e] }), 'light', p(3, 4));
+    assert.equal(hit.player.hp, 2, kind);
+    assert.equal(hit.player.maxHp, 3);
+    assert.equal(hit.phase, 'normal');
+  }
+});
+
+test('three unblocked incoming attacks are fatal and further hits never make HP negative', () => {
+  for (const count of [3, 4]) {
+    const attackers = [p(3, 2), p(2, 2), p(4, 2), p(4, 3)].slice(0, count).map((point, i) => incoming(i, point, i === 0));
+    const s = fixture({ enemies: attackers });
+    const lost = act(s, 'light', p(3, 4));
+    assert.equal(lost.player.hp, 0);
+    assert.equal(lost.phase, 'lost');
+    assert.deepEqual(availableAbilities(lost), []);
+    assert.equal(act(lost, 'light', p(3, 2)), lost);
+    assert.equal(s.player.hp, 3);
   }
 });
 
@@ -147,7 +173,7 @@ test('Light parry direction uses an attacker location after its gap closer', () 
   e.intent!.destination = p(6, 3);
   const hit = act(fixture({ enemies: [e] }), 'light', p(4, 3));
   assert(same(get(hit, 1), p(6, 3)));
-  assert.equal(hit.player.hp, 12);
+  assert.equal(hit.player.hp, PLAYER_MAX_HP);
   assert.equal(hit.player.attunement, 0);
   assert.equal(get(hit, 1).guard, 30);
 });
@@ -155,7 +181,7 @@ test('Light parry direction uses an attacker location after its gap closer', () 
 test('a Light breach interrupts Heavy and skips this immediate enemy resolution', () => {
   const e = incoming(1, p(3, 2), true); e.guard = 2;
   const hit = act(fixture({ enemies: [e] }), 'light', p(3, 2));
-  assert.equal(hit.player.hp, 12);
+  assert.equal(hit.player.hp, PLAYER_MAX_HP);
   assert.equal(get(hit, 1).hp, 3);
   assert.equal(get(hit, 1).guard, 50);
   assert.equal(get(hit, 1).stun, 0);
@@ -166,7 +192,7 @@ for (const heavy of [false, true]) {
   test(`Deflect blocks all five covered ${heavy ? 'Heavy' : 'normal'} directions without damage or charge gain`, () => {
     const s = bank(fixture({ enemies: arc(p(3, 3), 0, 5).map((point, i) => incoming(i + 1, point, heavy)) }), 4);
     const result = act(s, 'deflect', p(3, 2));
-    assert.equal(result.player.hp, 12);
+    assert.equal(result.player.hp, PLAYER_MAX_HP);
     assert.equal(result.player.attunement, 3);
     assert.equal(result.round, 2);
     assert(result.enemies.every(e => e.guard === 30 && e.hp === 3 && !e.breached));
@@ -178,7 +204,7 @@ test('Deflect spends its final charge and does not cover the rear three directio
   const s = bank(fixture({ enemies: [incoming(1, p(3, 4), true)] }), 1);
   const result = act(s, 'deflect', p(3, 2));
   assert.equal(result.player.attunement, 0);
-  assert.equal(result.player.hp, 10);
+  assert.equal(result.player.hp, 2);
   assert.equal(act(result, 'deflect', p(3, 2)), result);
 });
 
@@ -191,14 +217,14 @@ test('blocked gap closers cancel without moving, hitting, or retargeting', () =>
     if (blockedBy === 'enemy') s.enemies.push(enemy(2, 3, 1));
     const result = act(s, 'light', p(4, 3));
     assert(same(get(result, 1), p(3, 0)), blockedBy);
-    assert.equal(result.player.hp, 12, blockedBy);
+    assert.equal(result.player.hp, PLAYER_MAX_HP, blockedBy);
   }
 });
 
 test('enemy attack footprints stay fixed when the player dashes away', () => {
   const s = fixture({ enemies: [incoming(1, p(3, 2))] });
   const hit = act(s, 'dash', p(5, 3));
-  assert.equal(hit.player.hp, 12);
+  assert.equal(hit.player.hp, PLAYER_MAX_HP);
   assert.equal(hit.round, 2);
 });
 
@@ -320,7 +346,7 @@ test('frozen actions never advance enemy positions, cycles, stun, Guard recovery
   const before = structuredClone(s.enemies);
   const moved = act(s, 'dashAttack', p(4, 3));
   assert.deepEqual(moved.enemies, before);
-  assert.equal(moved.round, 1); assert.equal(moved.player.hp, 12); assert.equal(moved.charge, 2);
+  assert.equal(moved.round, 1); assert.equal(moved.player.hp, PLAYER_MAX_HP); assert.equal(moved.charge, 2);
   planEnemies(moved); assert.deepEqual(moved.enemies, before);
 });
 
@@ -341,9 +367,9 @@ test('dead core targets never return; final kills clear arenas and the fifth win
     assert.equal(killed.phase, room === TOTAL_ROOMS ? 'won' : 'cleared');
     assert.equal(killed.charge, 0); assert.equal(get(killed, 1).hp, 0);
     if (room === 1) {
-      killed.player.hp = 6;
+      killed.player.hp = 1;
       const advanced = execute(killed, { type: 'nextRoom' });
-      assert.equal(advanced.room, 2); assert.equal(advanced.phase, 'normal'); assert.equal(advanced.player.hp, 9);
+      assert.equal(advanced.room, 2); assert.equal(advanced.phase, 'normal'); assert.equal(advanced.player.hp, 3);
     }
   }
 });
@@ -462,7 +488,7 @@ function checkLayout(s: GameState) {
 
 test('all five arenas remain deterministic, connected, and collision-free in the smaller board', () => {
   for (let seed = 1; seed <= 48; seed++) {
-    let s = createGame(seed); assert.deepEqual(s, createGame(seed)); assert.equal(s.version, 3);
+    let s = createGame(seed); assert.deepEqual(s, createGame(seed)); assert.equal(s.version, 4);
     for (let room = 1; room <= TOTAL_ROOMS; room++) {
       checkLayout(s); assert(same(s.player, p(3, 5))); assert(s.walls.length >= 3 && s.walls.length <= 5);
       assert.equal(s.enemies.length, 3 + Math.floor((room - 1) / 2));
@@ -494,5 +520,7 @@ test('restart resets normal turn state and does not retain obsolete slot fields'
   const s = createGame(731);
   assert.equal(s.phase, 'normal'); assert.equal(s.room, 1); assert.equal(s.round, 1);
   assert.equal(s.player.attunement, 0); assert.equal(s.player.hp, s.player.maxHp);
+  assert.equal(s.player.hp, 3); assert.equal(s.player.maxHp, 3);
+  assert(s.enemies.every(e => !e.intent || e.intent.label.endsWith('1 damage')));
   assert(!('slot' in s)); assert(!('resumePhase' in s));
 });

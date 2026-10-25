@@ -57,7 +57,7 @@ h1 { font-size: 17px; line-height: 1.2; font-weight: 600; margin: 0; }
 .hp-dot { display: inline-block; flex: 0 0 auto; width: 8px; height: 8px; border: 1px solid var(--hp); border-radius: 50%; background: var(--hp); }
 .hp-dot.is-empty { border-color: var(--hp-empty); background: #25181d; }
 .hp-key { color: var(--hp); }
-.status-strip .hp-dots { display: inline-grid; grid-template-columns: repeat(6, 7px); gap: 3px; margin-left: 7px; }
+.status-strip .hp-dots { display: inline-grid; grid-template-columns: repeat(3, 7px); gap: 3px; margin-left: 7px; }
 .status-strip .hp-dot { width: 7px; height: 7px; }
 .unit-vitals { display: inline-flex; flex-direction: column; align-items: stretch; width: 130px; max-width: 100%; vertical-align: middle; }
 .guard-meter { position: relative; display: block; width: 100%; height: 19px; overflow: hidden; border: 1px solid #8a96a5; border-radius: 1px; background: #222b35; }

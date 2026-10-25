@@ -1,5 +1,14 @@
 # Verification
 
+## Version 0.4 — 24 October 2026
+
+- 52 combat and save checks pass, including 3 starting/max HP, exactly 1 damage per unblocked enemy attack, three-hit defeat, Heavy bypassing Light parries, Deflect protection, healing capped at 3, and validated version 3 save migration.
+- WebKit iPad touch checks confirm a Heavy hit reduces HP from 3 to 2, leaves exactly one empty dot, and is blocked by the following Deflect. Restart restores exactly 3 HP.
+- A version 3 frozen save migrates without changing its round or frozen budget, clamps 8/12 HP to 3/3, and relabels Heavy intentions to 1 damage. Migration is persisted immediately; subsequent writes by an older tab to the old key cannot overwrite the version 4 run.
+- Visually inspected a five-enemy arena with overlapping threats at 834×1194: dashed movement arrows, source-labeled landing markers, solid attack arrows, source chips on threatened tiles, and focused-source emphasis are visible. Guard and HP stay readable. Inspections list each overlapping source and leave combat state unchanged.
+- Enemy plan visibility toggle and frozen-time hiding were checked visually. Hovering during target selection preserves the intended Dash; confirming it matches the simulation exactly. Portrait/landscape layouts at 834×1194, 1194×834, and 768×1024 remain square without horizontal overflow. No browser page errors were observed.
+- Production typecheck/build pass. Earlier balance witnesses used higher player HP and do not establish complete-run balance for this revision.
+
 ## Version 0.3 — 24 October 2026
 
 - 47 combat and save checks pass. Coverage includes one normal action followed by immediate enemy response, zero-cost Dash, Light center/side damage and charge-on-hit, normal versus Heavy parries, five-direction Deflect, charge limits, the radial entry pulse, all eight Dash Attack directions, no HP spill on breach, core removal/return, and zero-budget rejection.

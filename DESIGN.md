@@ -1,4 +1,4 @@
-# Combat prototype rules, version 0.3
+# Combat prototype rules, version 0.4
 
 A fresh, placeholder-only combat prototype with a minimal interface. This version uses a 7 × 7 arena and one normal action per turn.
 
@@ -61,7 +61,7 @@ Removed enemies do not block movement. A surviving enemy returns when Freeze end
 | --- | ---: | ---: | --- |
 | Lunge | 5 | 1 | Gap-closing movement and a narrow attack; 1 damage |
 | Sweep | 15 | 2 | Mobile three-tile arc; 1 damage |
-| Heavy | 20 | 3 | Mobile larger footprint; 2 damage; Light Attack cannot parry it |
+| Heavy | 20 | 3 | Mobile larger footprint; 1 damage; Light Attack cannot parry it |
 
 Guard protects all HP. Breaching cancels the current intention and stuns the enemy through the next enemy response. At the end of that response, its Guard restores. Unbreached enemies regenerate **10 Guard per normal enemy response**, up to their maximum. Breaching itself never removes HP.
 
@@ -69,9 +69,11 @@ Openings follow enemy cycles and appear in bright pink. Breached enemies appear 
 
 ## Run and interface
 
-A run spans five seeded arenas. The player starts with 12 HP. Clearing an arena allows advancement and restores 3 HP, capped at maximum. Later arenas increase the enemy count from three to five. Layout generation preserves connected open space and room around the starting tile. Zero HP ends the run. There are no progression upgrades in this combat slice.
+A run spans five seeded arenas. The player starts with a maximum of 3 HP. Every unblocked enemy attack deals exactly 1 HP, including Heavy attacks. Multiple enemies can each hit during one response; damage is per attacker, not per marked tile. Clearing an arena allows advancement and restores HP to 3. Later arenas increase the enemy count from three to five. Layout generation preserves connected open space and room around the starting tile. Zero HP ends the run. There are no progression upgrades in this combat slice.
 
 The persistent interface contains the board, player HP and charge, available actions, and contextual targeting or inspection. Touch input uses action → target → confirm. Hover and tap inspection expose enemy Guard, HP, openings, destinations, and attack tiles without spending a turn. Detailed controls, rules, and display options are collapsed under Controls & rules; seed and restart controls are under Run.
+
+Enemy plans are drawn by source. A dashed movement arrow runs from the enemy's current tile to its labeled landing marker. Solid attack arrows originate at that landing tile, with source IDs on attack tiles and ! for Heavy. Source colors and IDs stay consistent as enemies move. Overlapping threats retain each source label. Hovering or tapping an enemy emphasizes its plan; inspecting a threatened or landing tile emphasizes its related sources. Plans are hidden during frozen time, while inspection text remains available. Player action previews keep their separate functional colors.
 
 Functional colors remain consistent between action buttons, selected states, confirmations, target markers, and previews:
 
@@ -87,13 +89,13 @@ Enemy openings retain their distinct bright pink. The interface uses placeholder
 
 ## Persistence and implementation
 
-Version 3 saves use a separate browser storage entry for the 7 × 7 rules, including the current frozen budget and removed enemies. Version 1 and 2 saves remain untouched. Their 9 × 9 runs are not migrated into this ruleset. Restarting replaces only the current version’s saved run.
+Version 4 saves use a separate browser storage entry. Compatible version 3 runs migrate with current HP capped at 3 and maximum HP set to 3; zero HP stays zero. Arena progress, frozen budget, enemy state, and pulse are preserved. Saved intentions are relabeled to show 1 damage, including Heavy attacks. The old save is left untouched, and older open tabs cannot overwrite version 4 progress. Version 1 and 2 saves remain untouched; their 9 × 9 runs are not migrated into this ruleset. Restarting replaces only the current version's saved run.
 
 The TypeScript simulation is independent of Phaser. The board uses canvas; text and controls use the DOM. Responsive sizing preserves square tiles and updates pointer coordinates after resizing. Reduced-motion preferences suppress the pulse animation. GitHub Pages serves the static production build.
 
 ## Balance assumptions and validation scope
 
-The action timing, action set, charge rules, damage layers, and fixed movement-facing Dash Attack above define this revision. Existing regeneration of 10 Guard per response is retained as prototype tuning, along with player HP, healing, arena count, enemy density, and enemy cycle timing. These values still need playtesting.
+The action timing, action set, charge rules, damage layers, fixed movement-facing Dash Attack, 3 player HP, and uniform 1 incoming damage define this revision. Existing regeneration of 10 Guard per response is retained as prototype tuning, along with healing, arena count, enemy density, and enemy cycle timing. These tuning values still need playtesting.
 
 Because regeneration exceeds Light Attack’s 1–2 Guard damage, Light Attack primarily builds charge and provides a narrow parry. Repeated normal attacks do not steadily wear down intact armor under the current tuning. An enemy already at sufficiently low Guard can still be breached by Light Attack. Whether this produces the intended rhythm between normal combat and Freeze is a balance question, not a verified result.
 

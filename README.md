@@ -1,6 +1,6 @@
 # Grid combat prototype
 
-Version 0.3 is a minimal, touch-friendly combat prototype on a **7 × 7 grid**. It uses placeholder units, a TypeScript simulation, a Phaser board, and plain HTML controls. There is no setting or flavor.
+Version 0.4 is a minimal, touch-friendly combat prototype on a **7 × 7 grid**. It uses placeholder units, a TypeScript simulation, a Phaser board, and plain HTML controls. There is no setting or flavor.
 
 ## Play
 
@@ -16,7 +16,7 @@ At **3 or more charge**, use **Freeze** before committing another normal action.
 
 While frozen, the only action is **Dash Attack**, costing **1 charge**. Move along a clear queen line, then attack the three neighbors ahead of the landing tile. The movement direction fixes the attack direction. Each target takes 5 Guard, or loses 1 HP if it was already breached. A hit that breaches Guard does not also damage HP. Core-hit survivors leave combat until Freeze ends and return with restored armor.
 
-**End Freeze** discards unused budget and resumes normal play without advancing enemy time. Clear five arenas without losing all HP; continuing to the next arena restores 3 HP.
+**Resume time** discards unused budget and resumes normal play without advancing enemy time. You start with **3 HP**, and every unblocked enemy hit deals **1 damage**, including Heavy attacks. Separate enemies can each hit during one response. Clear five arenas without losing all HP; continuing to the next arena restores HP to 3.
 
 ## Read the board
 
@@ -24,9 +24,11 @@ Guard appears as a continuous bar with integer current/max values. Red dots bene
 
 Action colors match their targeting previews: muted green for Dash, light beige for Light Attack, sky blue for Deflect, pink for Freeze, and gold for Dash Attack. Bright pink enemy outlines mark openings; yellow marks breached armor.
 
-Hover or tap a tile to inspect its contents, enemy arrivals, and planned attacks. Inspection never changes your action target or advances time. Controls, detailed rules, and display options are collapsed under **Controls & rules**; seed and restart options are under **Run**.
+Dashed arrows connect each enemy to its planned landing tile. Solid arrows connect that landing tile to its attack tiles. Matching enemy IDs identify the source, including when attacks overlap; ! marks Heavy attacks. Hover or tap an enemy or threatened tile to emphasize related plans. Plans are hidden during Freeze so the Dash Attack preview stays clear.
 
-Runs save automatically in the current browser, including during Freeze. Version 0.3 starts a separate 7 × 7 run: older version 1 and 2 saves remain untouched and are not converted from their 9 × 9 rules.
+Hover or tap a tile to inspect its contents, enemy arrivals, and planned attacks. Hovering never changes your action target or advances time. Controls, detailed rules, and display options are collapsed under **Controls & rules**; seed and restart options are under **Run**.
+
+Runs save automatically in the current browser, including during Freeze. Existing version 3 runs retain progress and migrate to the 3-HP cap. Version 4 uses separate storage so older open tabs cannot overwrite the updated run. Older version 1 and 2 saves remain untouched and are not converted from their 9 × 9 rules.
 
 ## Development
 

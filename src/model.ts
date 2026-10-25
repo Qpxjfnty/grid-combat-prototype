@@ -15,7 +15,9 @@ export interface GameState {
 }
 export type Command = { type: 'act'; ability: Ability; target?: Point } | { type: 'beginAttack' } | { type: 'endAttack' } | { type: 'nextRoom' };
 export const SIZE = 7;
-export const STATE_VERSION = 3;
+export const STATE_VERSION = 4;
+export const PLAYER_MAX_HP = 3;
+export const ENEMY_DAMAGE = 1;
 export const THRESHOLD = 3;
 export const MAX_ATTUNEMENT = 10;
 export const GUARD = { lunge: 5, sweep: 15, heavy: 20, lightCenter: 2, lightSide: 1, pulse: 5, dashAttack: 5, regen: 10 } as const;

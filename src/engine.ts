@@ -1,4 +1,4 @@
-import { Ability, Command, COSTS, DIRS, Direction, Enemy, EnemyKind, GameState, GUARD, MAX_ATTUNEMENT, Point, SIZE, STATE_VERSION, THRESHOLD, TOTAL_ROOMS } from './model';
+import { Ability, Command, COSTS, DIRS, Direction, Enemy, EnemyKind, ENEMY_DAMAGE, GameState, GUARD, MAX_ATTUNEMENT, PLAYER_MAX_HP, Point, SIZE, STATE_VERSION, THRESHOLD, TOTAL_ROOMS } from './model';
 import { arc, clearPath, directionTo, distance, inside, pulse, same } from './geometry';
 
 const kinds: EnemyKind[] = ['lunge', 'sweep', 'heavy'];
@@ -105,7 +105,7 @@ export function createGame(seed: number = Date.now()): GameState {
     room: 1,
     round: 1,
     phase: 'normal',
-    player: { x: Math.floor(SIZE / 2), y: SIZE - 2, hp: 12, maxHp: 12, attunement: 0 },
+    player: { x: Math.floor(SIZE / 2), y: SIZE - 2, hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP, attunement: 0 },
     charge: 0,
     walls: [],
     enemies: [],
@@ -256,7 +256,7 @@ export function planEnemies(state: GameState): void {
       destination: { ...chosen.point },
       tiles: chosen.tiles,
       heavy: enemy.kind === 'heavy',
-      label: enemy.kind === 'lunge' ? 'Lunge · 1 damage' : enemy.kind === 'sweep' ? 'Sweep · 1 damage' : 'Heavy · 2 damage',
+      label: `${enemy.kind === 'lunge' ? 'Lunge' : enemy.kind === 'sweep' ? 'Sweep' : 'Heavy'} · ${ENEMY_DAMAGE} damage`,
     };
   }
 }
@@ -286,7 +286,7 @@ function resolveEnemies(state: GameState): void {
     if (countered) {
       counters++;
     } else {
-      state.player.hp = Math.max(0, state.player.hp - (intent.heavy ? 2 : 1));
+      state.player.hp = Math.max(0, state.player.hp - ENEMY_DAMAGE);
       hits++;
     }
   }
@@ -344,7 +344,7 @@ export function execute(state: GameState, command: Command): GameState {
     if (state.phase !== 'cleared' || state.room >= TOTAL_ROOMS) return state;
     const next = structuredClone(state);
     next.room++;
-    next.player.hp = Math.min(next.player.maxHp, next.player.hp + 3);
+    next.player.hp = Math.min(PLAYER_MAX_HP, next.player.hp + 3);
     populateRoom(next);
     return next;
   }
